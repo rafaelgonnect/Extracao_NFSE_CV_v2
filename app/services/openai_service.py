@@ -4,6 +4,9 @@ import os
 import hashlib
 import logging
 import time
+import fitz  # PyMuPDF
+from PIL import Image, ImageEnhance
+from io import BytesIO
 from typing import List
 from openai import OpenAI
 from app.models.schemas import NFSeData
@@ -35,6 +38,50 @@ def add_additional_properties_false(schema):
 def get_pdf_hash(pdf_content: bytes) -> str:
     return hashlib.md5(pdf_content).hexdigest()
 
+def process_pdf_to_enhanced_image(pdf_content: bytes) -> str:
+    """Converte a primeira página do PDF em uma imagem de alta resolução e aplica melhorias para OCR."""
+    try:
+        conv_start = time.time()
+        # 1. Abrir PDF com alta resolução (DPI 300+)
+        doc = fitz.open(stream=pdf_content, filetype="pdf")
+        if doc.page_count == 0:
+            raise ValueError("O PDF não contém páginas.")
+        
+        page = doc.load_page(0)
+        
+        # Zoom de 4.0x para garantir que textos pequenos (como código de verificação) fiquem nítidos
+        zoom = 4.0 
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat)
+        
+        # 2. Carregar no Pillow para processamento de imagem
+        img = Image.open(BytesIO(pix.tobytes("png")))
+        
+        # Converter para escala de cinza para aumentar contraste do texto
+        img = img.convert("L")
+        
+        # Aumentar o contraste
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(2.0)
+        
+        # Aumentar a nitidez
+        sharpener = ImageEnhance.Sharpness(img)
+        img = sharpener.enhance(2.0)
+        
+        # 3. Converter de volta para Base64 (JPEG para economizar tokens mantendo qualidade)
+        buffered = BytesIO()
+        img.save(buffered, format="JPEG", quality=95)
+        img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+        
+        doc.close()
+        conv_time = time.time() - conv_start
+        logger.info(f"Conversão e limpeza de imagem concluída em {conv_time:.2f}s (Zoom: {zoom})")
+        return img_base64
+        
+    except Exception as e:
+        logger.error(f"Erro no processamento de imagem do PDF: {str(e)}", exc_info=True)
+        raise ValueError(f"Falha ao processar imagem para OCR: {str(e)}")
+
 def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
     start_time = time.time()
     pdf_hash = get_pdf_hash(pdf_content)
@@ -43,17 +90,13 @@ def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
         logger.info(f"Cache HIT para PDF (hash: {pdf_hash})")
         return extraction_cache[pdf_hash]
 
-    logger.debug(f"Cache MISS para PDF (hash: {pdf_hash}). Enviando PDF direto para o modelo...")
+    logger.debug(f"Cache MISS para PDF (hash: {pdf_hash}). Processando imagem aprimorada...")
 
-    # 1. Preparar o PDF em Base64 para envio direto
-    try:
-        pdf_base64 = base64.b64encode(pdf_content).decode('utf-8')
-    except Exception as e:
-        logger.error(f"Erro ao codificar PDF para Base64: {str(e)}", exc_info=True)
-        raise ValueError(f"Erro ao processar PDF: {str(e)}")
+    # 1. Converter PDF para Imagem Aprimorada
+    image_base64 = process_pdf_to_enhanced_image(pdf_content)
 
     # 2. Montar o prompt e chamar OpenAI
-    logger.info(f"Chamando API da OpenAI com PDF direto (Modelo: gpt-5-nano-2025-08-07)...")
+    logger.info(f"Chamando API da OpenAI com Imagem Aprimorada (Modelo: gpt-5-nano-2025-08-07)... ")
     ai_start = time.time()
     
     # Gerar JSON Schema a partir do modelo Pydantic para garantir extração perfeita
@@ -61,21 +104,23 @@ def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
     json_schema = add_additional_properties_false(json_schema)
     
     system_prompt = f"""
-    Você é um assistente especializado em extração de dados de Notas Fiscais de Serviço Eletrônicas (NFS-e) brasileiras.
-    Sua tarefa é analisar o documento PDF fornecido e extrair TODOS os dados estruturados possíveis.
+    Você é um assistente especializado em extração de dados de Notas Fiscais de Serviço Eletrônicas (NFS-e) brasileiras através de visão computacional de alta precisão.
+    Sua tarefa é analisar a imagem da nota fiscal e extrair TODOS os dados estruturados.
+    
+    ATENÇÃO ESPECIAL:
+    - NUMERO DA NOTA: Geralmente localizado no canto superior direito ou cabeçalho superior. Procure por "Número da Nota", "Nº da Nota" ou "Nota Fiscal Número".
+    - CODIGO DE VERIFICAÇÃO: Geralmente localizado próximo ao número da nota ou no rodapé de autenticidade. Pode conter letras e números misturados.
+    - VALORES: Extraia valores monetários com precisão decimal.
     
     Você DEVE seguir rigorosamente este schema JSON para a saída:
     {json.dumps(json_schema, indent=2)}
     
     Instruções Adicionais:
-    1. Identifique os dados do Prestador e Tomador (CNPJ, Razão Social, Endereço).
-    2. Extraia valores monetários como números decimais (float).
-    3. Se um campo não for encontrado, use null.
-    4. Para datas, utilize o formato original encontrado ou YYYY-MM-DD.
-    5. A discriminação dos serviços deve ser o texto completo descrevendo o serviço.
+    1. Se um campo não for encontrado mesmo após análise minuciosa, use null.
+    2. Ignore carimbos ou assinaturas que sobreponham o texto, foque no conteúdo impresso.
     """
 
-    user_prompt = "Extraia os dados desta NFS-e conforme o schema fornecido."
+    user_prompt = "Analise esta imagem de NFS-e e extraia os dados conforme o schema, focando na precisão do Número e Código de Verificação."
 
     # Configurações comuns
     model_params = {
@@ -86,10 +131,10 @@ def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
                 "content": [
                     {"type": "text", "text": user_prompt},
                     {
-                        "type": "file",
-                        "file": {
-                            "filename": "nfse.pdf",
-                            "file_data": f"data:application/pdf;base64,{pdf_base64}"
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{image_base64}",
+                            "detail": "high"
                         }
                     },
                 ],

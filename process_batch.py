@@ -101,7 +101,7 @@ async def process_single_pdf(client: httpx.AsyncClient, pdf_path: Path):
                 logger.error(f"ERRO INESPERADO: {pdf_path.name} | {str(e)}")
                 return pdf_name, f"ERRO: {str(e)}"
         
-        return pdf_name, "FALHA APÓS RETENTATIVAS""}]}
+        return pdf_name, "FALHA APÓS RETENTATIVAS"
 
 async def main():
     # Garantir que a pasta de entrada existe

@@ -123,6 +123,20 @@ def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
     ai_time = time.time() - ai_start
     logger.info(f"Resposta da OpenAI recebida em {ai_time:.2f}s")
 
+    # Calcular custos (Preços fornecidos: $0,05/1M input, $0,40/1M output)
+    usage = response.usage
+    input_tokens = usage.prompt_tokens
+    output_tokens = usage.completion_tokens
+    
+    cost_input = (input_tokens / 1_000_000) * 0.05
+    cost_output = (output_tokens / 1_000_000) * 0.40
+    total_cost = cost_input + cost_output
+
+    logger.info(
+        f"Uso de Tokens: Input={input_tokens} | Output={output_tokens} | "
+        f"Custo Estimado: ${total_cost:.6f}"
+    )
+
     # 4. Parsear e Cache
     content = response.choices[0].message.content
     logger.debug(f"Conteúdo bruto recebido da IA: {content}")

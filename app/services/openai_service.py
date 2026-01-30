@@ -112,11 +112,10 @@ def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
             **model_params
         )
     except Exception as e:
-        logger.warning(f"Erro no modelo solicitado, tentando fallback para gpt-4o. Erro: {str(e)}")
-        # Fallback para gpt-4o
+        logger.warning(f"Erro na primeira tentativa com gpt-5-nano, tentando novamente... Erro: {str(e)}")
+        # Tentativa de reprocessamento com o mesmo modelo gpt-5-nano
         response = client.chat.completions.create(
-            model="gpt-4o",
-            temperature=1,
+            model="gpt-5-nano-2025-08-07",
             **model_params
         )
 

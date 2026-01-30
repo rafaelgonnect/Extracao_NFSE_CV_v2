@@ -72,7 +72,7 @@ async def extract_nfse(request: PDFRequest):
             
         # Iniciar extração
         logger.info("Iniciando extração inteligente de PDF direto...")
-        data = extract_data_from_pdf(pdf_content)
+        data = await extract_data_from_pdf(pdf_content)
         
         logger.info("Extração concluída e dados validados.")
         return data

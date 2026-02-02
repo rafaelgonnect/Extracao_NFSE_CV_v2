@@ -111,19 +111,43 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
         
         system_prompt = f"""
         Você é um assistente especializado em extração de dados de Notas Fiscais de Serviço Eletrônicas (NFS-e) brasileiras através de visão computacional de alta precisão.
-        Sua tarefa é analisar a imagem da nota fiscal e extrair TODOS os dados estruturados.
+        Sua tarefa é analisar a imagem da nota fiscal e extrair TODOS os dados estruturados conforme o schema JSON fornecido.
         
-        ATENÇÃO ESPECIAL:
-        - NUMERO DA NOTA: Geralmente localizado no canto superior direito ou cabeçalho superior. Procure por "Número da Nota", "Nº da Nota" ou "Nota Fiscal Número".
-        - CODIGO DE VERIFICAÇÃO: Geralmente localizado próximo ao número da nota ou no rodapé de autenticidade. Pode conter letras e números misturados.
-        - VALORES: Extraia valores monetários com precisão decimal.
+        ATENÇÃO ESPECIAL AOS CAMPOS ALVO (Preencha com precisão):
         
+        1. IDENTIFICAÇÃO:
+           - numero_nota: Número da Nota Fiscal (NFS-e).
+           - codigo_verificacao: Código de verificação/autenticidade (alfanumérico).
+           - data_emissao: Data de emissão da nota.
+           - outras_informacoes: Procure por número de RPS (Recibo Provisório de Serviços), se houver.
+           
+        2. PRESTADOR E TOMADOR:
+           - prestador_cnpj: CNPJ do prestador de serviços (apenas números).
+           - tomador_cnpj: CNPJ do tomador de serviços (apenas números).
+           
+        3. DETALHES DO SERVIÇO:
+           - codigo_servico: Código do serviço (Item da LC 116).
+           - discriminacao_servicos: Descrição completa dos serviços prestados.
+           - municipio_prestacao: Nome do município onde o serviço foi prestado.
+           
+        4. VALORES E IMPOSTOS (Atenção redobrada a valores zerados ou nulos):
+           - valor_total: Valor total da nota / Valor líquido + Retenções.
+           - valor_iss: Valor do ISS.
+           - aliquota_iss: Alíquota do ISS (%).
+           - valor_pis: Valor do PIS.
+           - valor_cofins: Valor do COFINS.
+           - valor_inss: Valor do INSS.
+           - valor_ir: Valor do IR (Imposto de Renda).
+           - valor_csll: Valor da CSLL.
+           
         Você DEVE seguir rigorosamente este schema JSON para a saída:
         {{json.dumps(json_schema, indent=2)}}
         
         Instruções Adicionais:
-        1. Se um campo não for encontrado mesmo após análise minuciosa, use null.
-        2. Ignore carimbos ou assinaturas que sobreponham o texto, foque no conteúdo impresso.
+        - Se um campo numérico (impostos) estiver explícito como "0,00" ou "-", retorne 0.00.
+        - Se um campo não for encontrado, use null.
+        - Para CNPJ, remova pontuação (pontos, barras, traços), retornando apenas números.
+        - Ignore carimbos ou assinaturas que sobreponham o texto.
         """
 
         user_prompt = "Analise esta imagem de NFS-e e extraia os dados conforme o schema, focando na precisão do Número e Código de Verificação."

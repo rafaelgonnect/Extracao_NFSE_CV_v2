@@ -112,7 +112,14 @@ async def extract_nfse_legacy(request: LegacyRequest):
         predictions = []
         
         def add_pred(label, value, default_value=""):
-            final_value = str(value) if value is not None else default_value
+            final_value = default_value
+            if value is not None:
+                # Se for float (campos monetários), formatar com 2 casas decimais
+                if isinstance(value, float):
+                    final_value = f"{value:.2f}"
+                else:
+                    final_value = str(value)
+            
             predictions.append(LegacyPredictionItem(Label=label, OCR_Text=final_value, Score="1.0"))
         
         add_pred("CNPJ_Prest", data.prestador_cnpj)
@@ -120,7 +127,26 @@ async def extract_nfse_legacy(request: LegacyRequest):
         add_pred("Numero", data.numero_nota)
         add_pred("RPS", data.outras_informacoes, "0") # Tentativa de mapear algo, ou deixar 0
         add_pred("Codigo_Servico", data.codigo_servico)
-        add_pred("Data", data.data_emissao)
+        
+        # Garantir formatação de data DD/MM/YYYY
+        data_formatada = data.data_emissao
+        if data_formatada:
+             # Remover horário se houver (separador T ou espaço)
+             if "T" in data_formatada:
+                 data_formatada = data_formatada.split("T")[0]
+             elif " " in data_formatada:
+                 data_formatada = data_formatada.split(" ")[0]
+             
+             # Se estiver em YYYY-MM-DD, converter para DD/MM/YYYY
+             if "-" in data_formatada:
+                 try:
+                     parts = data_formatada.split("-")
+                     if len(parts) == 3:
+                         data_formatada = f"{parts[2]}/{parts[1]}/{parts[0]}"
+                 except:
+                     pass # Mantém original se falhar
+        
+        add_pred("Data", data_formatada)
         add_pred("Valor_Total", data.valor_total, "0.00")
         add_pred("Aliquota", data.aliquota_iss, "0.00")
         add_pred("Valor_ISS", data.valor_iss, "0.00")

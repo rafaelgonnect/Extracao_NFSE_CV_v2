@@ -13,7 +13,7 @@ class NFSeItem(BaseModel):
 class NFSeData(BaseModel):
     # Cabeçalho
     numero_nota: Optional[str] = Field(None, description="Número da Nota Fiscal")
-    data_emissao: Optional[str] = Field(None, description="Data de emissão da nota")
+    data_emissao: Optional[str] = Field(None, description="Data de emissão da nota no formato DD/MM/YYYY")
     codigo_verificacao: Optional[str] = Field(None, description="Código de verificação de autenticidade")
     
     # Prestador

@@ -144,6 +144,7 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
         {{json.dumps(json_schema, indent=2)}}
         
         Instruções Adicionais:
+        - O campo 'data_emissao' deve conter APENAS a data (DD/MM/YYYY). Remova qualquer informação de hora.
         - Se um campo numérico (impostos) estiver explícito como "0,00" ou "-", retorne 0.00.
         - Se um campo não for encontrado, use null.
         - Para CNPJ, remova pontuação (pontos, barras, traços), retornando apenas números.

@@ -117,8 +117,8 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
         
         1. IDENTIFICAÇÃO:
            - numero_nota: Número da Nota Fiscal (NFS-e).
-           - codigo_verificacao: Código de verificação/autenticidade (alfanumérico).
-           - data_emissao: Data de emissão da nota.
+           - codigo_verificacao: Código de Autenticidade ou Chave de Acesso. Geralmente um código alfanumérico longo.
+           - data_emissao: Data de emissão da nota no formato DD/MM/YYYY (ex: 25/10/2023). NÃO inclua horário.
            - outras_informacoes: Procure por número de RPS (Recibo Provisório de Serviços), se houver.
            
         2. PRESTADOR E TOMADOR:

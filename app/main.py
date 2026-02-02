@@ -111,26 +111,24 @@ async def extract_nfse_legacy(request: LegacyRequest):
         # Mapeamento para LegacyResponse
         predictions = []
         
-        def add_pred(label, value):
-            if value is not None:
-                # Convert float to string if needed, keeping precision if possible or standard format
-                # Legacy code often handles raw strings. We'll convert generic types to string.
-                predictions.append(LegacyPredictionItem(Label=label, OCR_Text=str(value), Score="1.0"))
+        def add_pred(label, value, default_value=""):
+            final_value = str(value) if value is not None else default_value
+            predictions.append(LegacyPredictionItem(Label=label, OCR_Text=final_value, Score="1.0"))
         
         add_pred("CNPJ_Prest", data.prestador_cnpj)
         add_pred("CNPJ_Tom", data.tomador_cnpj)
         add_pred("Numero", data.numero_nota)
-        add_pred("RPS", data.outras_informacoes) # Tentativa de mapear algo, ou deixar null
+        add_pred("RPS", data.outras_informacoes, "0") # Tentativa de mapear algo, ou deixar 0
         add_pred("Codigo_Servico", data.codigo_servico)
         add_pred("Data", data.data_emissao)
-        add_pred("Valor_Total", data.valor_total)
-        add_pred("Aliquota", data.aliquota_iss)
-        add_pred("Valor_ISS", data.valor_iss)
-        add_pred("PIS", data.valor_pis)
-        add_pred("COFINS", data.valor_cofins)
-        add_pred("INSS", data.valor_inss)
-        add_pred("IRRF", data.valor_ir)
-        add_pred("CSLL", data.valor_csll)
+        add_pred("Valor_Total", data.valor_total, "0.00")
+        add_pred("Aliquota", data.aliquota_iss, "0.00")
+        add_pred("Valor_ISS", data.valor_iss, "0.00")
+        add_pred("PIS", data.valor_pis, "0.00")
+        add_pred("COFINS", data.valor_cofins, "0.00")
+        add_pred("INSS", data.valor_inss, "0.00")
+        add_pred("IRRF", data.valor_ir, "0.00")
+        add_pred("CSLL", data.valor_csll, "0.00")
         add_pred("Discriminacao", data.discriminacao_servicos)
         add_pred("Chave", data.codigo_verificacao)
         add_pred("Municipio_Prestacao", data.municipio_prestacao)

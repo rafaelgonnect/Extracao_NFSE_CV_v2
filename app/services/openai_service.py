@@ -218,7 +218,7 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
         try:
             data_dict = json.loads(content)
             result = NFSeData(**data_dict)
-            extraction_cache[pdf_hash] = result
+            # extraction_cache[pdf_hash] = result
             
             total_time = time.time() - start_time
             logger.info(f"Processamento total finalizado com sucesso em {{total_time:.2f}}s")

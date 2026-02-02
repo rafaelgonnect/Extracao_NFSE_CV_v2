@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 # Configurações do Script
 INPUT_DIR = Path("exemplos pdf")
 API_URL = "https://webviewer-nfsextractor.bdoje9.easypanel.host/extract"
-CONCURRENCY_LIMIT = 5  # Reduzi para 5 para evitar sobrecarga no servidor remoto
-TIMEOUT = 180.0        # Aumentei para 3 minutos devido à complexidade da visão computacional
+CONCURRENCY_LIMIT = 50  # Reduzi para 5 para evitar sobrecarga no servidor remoto
+TIMEOUT = 300.0        # Aumentei para 3 minutos devido à complexidade da visão computacional
 MAX_RETRIES = 3        # Número máximo de tentativas por arquivo
 
 # Semáforo para controle de concorrência

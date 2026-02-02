@@ -10,8 +10,8 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
 logger = logging.getLogger(__name__)
 
-API_URL = "http://localhost:8000/extract"
-CONCURRENT_REQUESTS = 15
+API_URL = "https://webviewer-nfsextractor.bdoje9.easypanel.host/extract"
+CONCURRENT_REQUESTS = 50
 # Use um PDF pequeno para o teste de carga
 SAMPLE_PDF_PATH = "35057082220729538000149000000000003126017564074962 (1).pdf"
 

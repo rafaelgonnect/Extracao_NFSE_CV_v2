@@ -53,3 +53,22 @@ class NFSeData(BaseModel):
     # Outros
     municipio_prestacao: Optional[str] = None
     outras_informacoes: Optional[str] = None
+
+class LegacyRequest(BaseModel):
+    Base64File: str
+    SecretKey: Optional[str] = None
+    Queue: Optional[str] = None
+    Priority: Optional[int] = None
+
+class LegacyPredictionItem(BaseModel):
+    Label: str
+    OCR_Text: str
+    Score: Optional[str] = "1.0"
+
+class LegacyResult(BaseModel):
+    Prediction: List[LegacyPredictionItem]
+
+class LegacyResponse(BaseModel):
+    Result: List[LegacyResult]
+    StatusCode: str = "OK"
+    Message: str = "Success"

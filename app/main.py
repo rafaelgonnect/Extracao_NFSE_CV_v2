@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from app.services.openai_service import extract_data_from_pdf
-from app.models.schemas import NFSeData, PDFRequest
+from app.models.schemas import NFSeData, PDFRequest, LegacyRequest, LegacyResponse, LegacyResult, LegacyPredictionItem
 from app.utils.logging_config import setup_logging, request_id_ctx
 from dotenv import load_dotenv
 import uvicorn
@@ -83,6 +83,66 @@ async def extract_nfse(request: PDFRequest):
         # Erro genérico capturado pelo middleware, mas logamos detalhes específicos aqui também
         logger.error(f"Erro durante o fluxo de extração: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro interno no processamento: {str(e)}")
+
+@app.post("/api/extractData2", response_model=LegacyResponse)
+async def extract_nfse_legacy(request: LegacyRequest):
+    logger.debug("Recebendo requisição legado (Base64File)...")
+    
+    try:
+        # Decodificar Base64
+        try:
+            pdf_content = base64.b64decode(request.Base64File)
+            
+            # Validação básica de PDF (Header %PDF-)
+            if not pdf_content.startswith(b"%PDF-"):
+                logger.error("Arquivo enviado não é um PDF válido (header ausente).")
+                raise HTTPException(status_code=400, detail="O arquivo enviado não é um PDF válido.")
+                
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                raise e
+            logger.error(f"Erro na decodificação Base64: {str(e)}")
+            raise HTTPException(status_code=400, detail="String Base64 inválida.")
+            
+        # Iniciar extração
+        logger.info("Iniciando extração legado...")
+        data = await extract_data_from_pdf(pdf_content)
+        
+        # Mapeamento para LegacyResponse
+        predictions = []
+        
+        def add_pred(label, value):
+            if value is not None:
+                # Convert float to string if needed, keeping precision if possible or standard format
+                # Legacy code often handles raw strings. We'll convert generic types to string.
+                predictions.append(LegacyPredictionItem(Label=label, OCR_Text=str(value), Score="1.0"))
+        
+        add_pred("CNPJ_Prest", data.prestador_cnpj)
+        add_pred("CNPJ_Tom", data.tomador_cnpj)
+        add_pred("Numero", data.numero_nota)
+        add_pred("RPS", data.outras_informacoes) # Tentativa de mapear algo, ou deixar null
+        add_pred("Codigo_Servico", data.codigo_servico)
+        add_pred("Data", data.data_emissao)
+        add_pred("Valor_Total", data.valor_total)
+        add_pred("Aliquota", data.aliquota_iss)
+        add_pred("Valor_ISS", data.valor_iss)
+        add_pred("PIS", data.valor_pis)
+        add_pred("COFINS", data.valor_cofins)
+        add_pred("INSS", data.valor_inss)
+        add_pred("IRRF", data.valor_ir)
+        add_pred("CSLL", data.valor_csll)
+        add_pred("Discriminacao", data.discriminacao_servicos)
+        add_pred("Chave", data.codigo_verificacao)
+        add_pred("Municipio_Prestacao", data.municipio_prestacao)
+        
+        logger.info(f"Retornando resposta legado com {len(predictions)} campos.")
+        return LegacyResponse(Result=[LegacyResult(Prediction=predictions)])
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Erro legado: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
 @app.get("/health")
 def health_check():

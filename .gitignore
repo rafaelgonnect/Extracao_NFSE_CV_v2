@@ -12,3 +12,6 @@ logs/
 # Project specific
 .pytest_cache/
 body_sample.json
+exemplos pdf/
+*.zip
+*.pdf

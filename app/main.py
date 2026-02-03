@@ -50,6 +50,7 @@ async def log_requests_middleware(request: Request, call_next):
 
 @app.post("/extract", response_model=NFSeData)
 async def extract_nfse(request: PDFRequest):
+    logger.info(f"Processando documento com versão da API: {app.version}")
     logger.debug("Validando entrada Base64...")
     
     try:
@@ -75,6 +76,7 @@ async def extract_nfse(request: PDFRequest):
         data = await extract_data_from_pdf(pdf_content)
         
         logger.info("Extração concluída e dados validados.")
+        logger.info(f"Resposta da API: {data.model_dump_json()}")
         return data
         
     except HTTPException as he:
@@ -86,6 +88,7 @@ async def extract_nfse(request: PDFRequest):
 
 @app.post("/api/extractData2", response_model=LegacyResponse)
 async def extract_nfse_legacy(request: LegacyRequest):
+    logger.info(f"Processando documento com versão da API: {app.version}")
     logger.debug("Recebendo requisição legado (Base64File)...")
     
     try:
@@ -187,7 +190,9 @@ async def extract_nfse_legacy(request: LegacyRequest):
         add_pred("Base_Calculo", base_calc, "0.00")
         
         logger.info(f"Retornando resposta legado com {len(predictions)} campos.")
-        return LegacyResponse(Result=[LegacyResult(Prediction=predictions)])
+        response_obj = LegacyResponse(Result=[LegacyResult(Prediction=predictions)])
+        logger.info(f"Resposta da API: {response_obj.model_dump_json()}")
+        return response_obj
         
     except HTTPException as he:
         raise he

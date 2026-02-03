@@ -53,6 +53,10 @@ class NFSeData(BaseModel):
     # Outros
     municipio_prestacao: Optional[str] = None
     outras_informacoes: Optional[str] = None
+    
+    # Novos Campos Solicitados
+    ibs: Optional[float] = Field(None, description="Indicador de Situação (IBS) - Numérico com 2 casas decimais")
+    cbs: Optional[str] = Field(None, description="Código de Base de Substituição (CBS)")
 
 class LegacyRequest(BaseModel):
     Base64File: str

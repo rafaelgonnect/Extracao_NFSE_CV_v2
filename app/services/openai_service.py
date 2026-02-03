@@ -141,6 +141,12 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
            - valor_inss: Valor do INSS (Retenção Federal).
            - valor_ir: Valor do Imposto de Renda (IRRF).
            - valor_csll: Valor da Contribuição Social (CSLL).
+           
+        5. NOVOS CAMPOS ESPECÍFICOS:
+           - ibs: Indicador de Situação (IBS). Campo numérico. Se encontrado, extraia com 2 casas decimais.
+           - cbs: Código de Base de Substituição (CBS). Campo de texto.
+           - valor_liquido: Valor Líquido da Nota. Se não estiver explícito, calcule: Valor Total - Retenções.
+           - base_calculo: Base de Cálculo do ISS. Se não estiver explícito, geralmente é igual ao Valor dos Serviços.
 
         Você DEVE seguir rigorosamente este schema JSON para a saída:
         {{json.dumps(json_schema, indent=2)}}

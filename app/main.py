@@ -159,6 +159,33 @@ async def extract_nfse_legacy(request: LegacyRequest):
         add_pred("Chave", data.codigo_verificacao)
         add_pred("Municipio_Prestacao", data.municipio_prestacao)
         
+        # Novos Campos
+        add_pred("IBS", data.ibs, "0.00")
+        add_pred("CBS", data.cbs)
+        
+        # Valor Líquido - Formatação BRL 9.999,99
+        val_liq = data.valor_liquido
+        if val_liq is None and data.valor_total is not None:
+             # Regra básica se nulo: Total - Retenções
+             # Assumindo 0 se retenções nulas
+             retencoes = (data.valor_pis or 0) + (data.valor_cofins or 0) + (data.valor_inss or 0) + (data.valor_ir or 0) + (data.valor_csll or 0)
+             val_liq = data.valor_total - retencoes
+        
+        val_liq_str = "0,00"
+        if val_liq is not None:
+            # Formatar brasileiro: ponto milhar, virgula decimal
+            val_liq_str = f"{val_liq:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            
+        predictions.append(LegacyPredictionItem(Label="Valor_Liquido", OCR_Text=val_liq_str, Score="1.0"))
+        
+        # Base de Cálculo - Regra de Negócio
+        # Se não vier extraído, assumir Valor dos Serviços ou Valor Total
+        base_calc = data.base_calculo
+        if base_calc is None:
+             base_calc = data.valor_servicos if data.valor_servicos is not None else data.valor_total
+        
+        add_pred("Base_Calculo", base_calc, "0.00")
+        
         logger.info(f"Retornando resposta legado com {len(predictions)} campos.")
         return LegacyResponse(Result=[LegacyResult(Prediction=predictions)])
         

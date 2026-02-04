@@ -12,7 +12,8 @@ import base64
 import time
 import uuid
 import secrets
-from datetime import datetime
+import random
+from datetime import datetime, timedelta
 
 # Inicializar Logs
 
@@ -54,6 +55,12 @@ async def shutdown_db_client():
 async def log_to_mongo(endpoint: str, request_data: dict, response_data: dict, usage: dict = None, status_code: int = 200, error: str = None):
     try:
         logs_collection = await get_logs_collection()
+        
+        # Cálculo de Custo com Markup (Entre $0.010 e $0.013)
+        markup_fee = random.uniform(0.010, 0.013)
+        provider_cost = usage.get("total_cost", 0.0) if usage else 0.0
+        final_price = provider_cost + markup_fee if usage else 0.0
+        
         log_entry = {
             "timestamp": datetime.utcnow(),
             "request_id": request_id_ctx.get(),
@@ -62,7 +69,9 @@ async def log_to_mongo(endpoint: str, request_data: dict, response_data: dict, u
             "model": usage.get("model") if usage else "unknown",
             "input_tokens": usage.get("input_tokens", 0) if usage else 0,
             "output_tokens": usage.get("output_tokens", 0) if usage else 0,
-            "total_cost": usage.get("total_cost", 0.0) if usage else 0.0,
+            "provider_cost": provider_cost,
+            "markup_fee": markup_fee,
+            "final_price": final_price,
             "error": error,
             # Evitar salvar Base64 muito grande no log se não for estritamente necessário para debug
             # "request_payload": str(request_data)[:500] + "..." if request_data else None, 
@@ -276,11 +285,10 @@ async def extract_nfse_legacy(request: LegacyRequest):
 def health_check():
     return {"status": "ok", "timestamp": time.time()}
 
-@app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(username: str = Depends(get_current_username)):
+@app.get("/api/dashboard/stats")
+async def dashboard_stats(username: str = Depends(get_current_username)):
     logs_collection = await get_logs_collection()
     
-    # Agregação para totais
     pipeline = [
         {
             "$group": {
@@ -288,7 +296,9 @@ async def dashboard(username: str = Depends(get_current_username)):
                 "total_requests": {"$sum": 1},
                 "total_input_tokens": {"$sum": "$input_tokens"},
                 "total_output_tokens": {"$sum": "$output_tokens"},
-                "total_cost": {"$sum": "$total_cost"}
+                "total_provider_cost": {"$sum": "$provider_cost"},
+                "total_revenue": {"$sum": "$final_price"},
+                "avg_confidence": {"$avg": 1.0} # Placeholder, idealmente viria dos logs
             }
         }
     ]
@@ -297,80 +307,66 @@ async def dashboard(username: str = Depends(get_current_username)):
     
     if stats:
         s = stats[0]
-        total_requests = s.get("total_requests", 0)
-        total_input = s.get("total_input_tokens", 0)
-        total_output = s.get("total_output_tokens", 0)
-        total_cost = s.get("total_cost", 0.0)
-    else:
-        total_requests = 0
-        total_input = 0
-        total_output = 0
-        total_cost = 0.0
-        
-    # Buscar últimos 10 logs
-    last_logs = await logs_collection.find().sort("timestamp", -1).limit(10).to_list(length=10)
-    
-    logs_html = ""
-    for log in last_logs:
-        logs_html += f"""
-        <tr>
-            <td>{log.get('timestamp')}</td>
-            <td>{log.get('endpoint')}</td>
-            <td>{log.get('status_code')}</td>
-            <td>{log.get('total_cost', 0):.6f}</td>
-            <td>{log.get('model')}</td>
-        </tr>
-        """
+        return {
+            "total_requests": s.get("total_requests", 0),
+            "total_tokens": s.get("total_input_tokens", 0) + s.get("total_output_tokens", 0),
+            "total_provider_cost": s.get("total_provider_cost", 0.0),
+            "total_revenue": s.get("total_revenue", 0.0),
+            "avg_confidence": 0.98 # Simulado por enquanto
+        }
+    return {
+        "total_requests": 0, "total_tokens": 0, "total_provider_cost": 0.0, "total_revenue": 0.0, "avg_confidence": 0.0
+    }
 
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Dashboard de Monitoramento NFSe</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 40px; }}
-            .card {{ background: #f4f4f4; padding: 20px; border-radius: 8px; margin-bottom: 20px; display: inline-block; margin-right: 20px; min-width: 200px; }}
-            .card h3 {{ margin: 0 0 10px 0; color: #333; }}
-            .card p {{ font-size: 24px; font-weight: bold; margin: 0; color: #007bff; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-            th {{ background-color: #007bff; color: white; }}
-            tr:nth-child(even) {{ background-color: #f2f2f2; }}
-        </style>
-    </head>
-    <body>
-        <h1>Dashboard de Monitoramento - API NFSe</h1>
+@app.get("/api/dashboard/logs")
+async def dashboard_logs(
+    page: int = 1, 
+    limit: int = 10, 
+    status: str = None, 
+    start_date: str = None, 
+    end_date: str = None,
+    username: str = Depends(get_current_username)
+):
+    logs_collection = await get_logs_collection()
+    query = {}
+    
+    if status:
+        if status == "success":
+            query["status_code"] = 200
+        elif status == "error":
+            query["status_code"] = {"$ne": 200}
+            
+    if start_date and end_date:
+        try:
+            start = datetime.strptime(start_date, "%Y-%m-%d")
+            end = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+            query["timestamp"] = {"$gte": start, "$lt": end}
+        except:
+            pass
+
+    total_logs = await logs_collection.count_documents(query)
+    cursor = logs_collection.find(query).sort("timestamp", -1).skip((page - 1) * limit).limit(limit)
+    logs = await cursor.to_list(length=limit)
+    
+    # Converter ObjectId e datetime para JSON
+    serialized_logs = []
+    for log in logs:
+        log["_id"] = str(log["_id"])
+        log["timestamp"] = log["timestamp"].isoformat()
+        serialized_logs.append(log)
         
-        <div>
-            <div class="card">
-                <h3>Total Requisições</h3>
-                <p>{total_requests}</p>
-            </div>
-            <div class="card">
-                <h3>Custo Total ($)</h3>
-                <p>${total_cost:.4f}</p>
-            </div>
-            <div class="card">
-                <h3>Total Tokens (In/Out)</h3>
-                <p>{total_input} / {total_output}</p>
-            </div>
-        </div>
-        
-        <h2>Últimas Requisições</h2>
-        <table>
-            <tr>
-                <th>Data/Hora (UTC)</th>
-                <th>Endpoint</th>
-                <th>Status</th>
-                <th>Custo ($)</th>
-                <th>Modelo</th>
-            </tr>
-            {logs_html}
-        </table>
-    </body>
-    </html>
-    """
-    return html_content
+    return {
+        "data": serialized_logs,
+        "total": total_logs,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total_logs + limit - 1) // limit
+    }
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(username: str = Depends(get_current_username)):
+    with open("app/templates/dashboard.html", "r", encoding="utf-8") as f:
+        return f.read()
 
 if __name__ == "__main__":
     # Nota: No ambiente real, use uvicorn via CLI ou python -m

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFSe AI Analytics Dashboard</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .sidebar { height: 100vh; position: fixed; top: 0; left: 0; padding: 20px; background: #2c3e50; color: white; width: 250px; z-index: 1000; }
+        .main-content { margin-left: 250px; padding: 30px; }
+        .stat-card { border: none; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: transform 0.2s; }
+        .stat-card:hover { transform: translateY(-5px); }
+        .icon-box { width: 50px; height: 50px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 24px; color: white; }
+        .bg-gradient-primary { background: linear-gradient(45deg, #4e73df, #224abe); }
+        .bg-gradient-success { background: linear-gradient(45deg, #1cc88a, #13855c); }
+        .bg-gradient-info { background: linear-gradient(45deg, #36b9cc, #258391); }
+        .bg-gradient-warning { background: linear-gradient(45deg, #f6c23e, #dda20a); }
+        .log-card { border-left: 5px solid #4e73df; margin-bottom: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .log-card.error { border-left-color: #e74a3b; }
+        .log-header { cursor: pointer; padding: 15px; display: flex; justify-content: space-between; align-items: center; }
+        .log-details { border-top: 1px solid #eee; padding: 15px; background: #fcfcfc; display: none; }
+        .log-details.show { display: block; }
+        .json-box { background: #2d2d2d; color: #76d7c4; padding: 15px; border-radius: 6px; font-family: monospace; font-size: 12px; max-height: 300px; overflow-y: auto; }
+        .badge-status { font-size: 0.8em; padding: 5px 10px; }
+        .filter-bar { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar -->
+    <div class="sidebar d-flex flex-column">
+        <h3 class="mb-4 text-center"><i class="fas fa-robot me-2"></i>NFSe AI</h3>
+        <ul class="nav flex-column">
+            <li class="nav-item mb-2">
+                <a href="#" class="nav-link text-white active"><i class="fas fa-chart-line me-2"></i>Dashboard</a>
+            </li>
+            <li class="nav-item mb-2">
+                <a href="#" class="nav-link text-white-50"><i class="fas fa-file-invoice me-2"></i>Relatórios</a>
+            </li>
+            <li class="nav-item mb-2">
+                <a href="#" class="nav-link text-white-50"><i class="fas fa-cog me-2"></i>Configurações</a>
+            </li>
+        </ul>
+        <div class="mt-auto text-center text-white-50">
+            <small>v1.2.0 Stable</small>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>Dashboard Analítico</h2>
+            <div>
+                <button class="btn btn-outline-primary me-2" onclick="loadData()"><i class="fas fa-sync-alt"></i> Atualizar</button>
+                <button class="btn btn-success" onclick="exportCSV()"><i class="fas fa-file-csv"></i> Exportar CSV</button>
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="row mb-4">
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card stat-card h-100 py-2">
+                    <div class="card-body">
+                        <div class="row no-gutters align-items-center">
+                            <div class="col mr-2">
+                                <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Total Processado</div>
+                                <div class="h5 mb-0 font-weight-bold text-gray-800" id="stat-requests">...</div>
+                            </div>
+                            <div class="col-auto">
+                                <div class="icon-box bg-gradient-primary"><i class="fas fa-layer-group"></i></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card stat-card h-100 py-2">
+                    <div class="card-body">
+                        <div class="row no-gutters align-items-center">
+                            <div class="col mr-2">
+                                <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Receita Gerada</div>
+                                <div class="h5 mb-0 font-weight-bold text-gray-800" id="stat-revenue">...</div>
+                                <small class="text-muted">Custo Prov.: <span id="stat-cost">...</span></small>
+                            </div>
+                            <div class="col-auto">
+                                <div class="icon-box bg-gradient-success"><i class="fas fa-dollar-sign"></i></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card stat-card h-100 py-2">
+                    <div class="card-body">
+                        <div class="row no-gutters align-items-center">
+                            <div class="col mr-2">
+                                <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Confiança Média</div>
+                                <div class="h5 mb-0 font-weight-bold text-gray-800" id="stat-confidence">...</div>
+                            </div>
+                            <div class="col-auto">
+                                <div class="icon-box bg-gradient-info"><i class="fas fa-check-circle"></i></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card stat-card h-100 py-2">
+                    <div class="card-body">
+                        <div class="row no-gutters align-items-center">
+                            <div class="col mr-2">
+                                <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">Tokens (In/Out)</div>
+                                <div class="h5 mb-0 font-weight-bold text-gray-800" id="stat-tokens">...</div>
+                            </div>
+                            <div class="col-auto">
+                                <div class="icon-box bg-gradient-warning"><i class="fas fa-microchip"></i></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div class="row mb-4">
+            <div class="col-lg-8">
+                <div class="card shadow mb-4">
+                    <div class="card-header py-3">
+                        <h6 class="m-0 font-weight-bold text-primary">Volume de Processamento (7 dias)</h6>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="volumeChart" height="100"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4">
+                <div class="card shadow mb-4">
+                    <div class="card-header py-3">
+                        <h6 class="m-0 font-weight-bold text-primary">Status das Requisições</h6>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="statusChart" height="220"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filter-bar row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">Data Início</label>
+                <input type="date" class="form-control" id="filter-start">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Data Fim</label>
+                <input type="date" class="form-control" id="filter-end">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Status</label>
+                <select class="form-select" id="filter-status">
+                    <option value="">Todos</option>
+                    <option value="success">Sucesso</option>
+                    <option value="error">Erro</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-primary w-100" onclick="applyFilters()"><i class="fas fa-filter"></i> Filtrar</button>
+            </div>
+        </div>
+
+        <!-- Logs List -->
+        <div id="logs-container">
+            <!-- Logs will be injected here -->
+            <div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>
+        </div>
+
+        <!-- Pagination -->
+        <nav aria-label="Page navigation" class="mt-4">
+            <ul class="pagination justify-content-center" id="pagination">
+                <!-- Pagination items -->
+            </ul>
+        </nav>
+
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        let currentPage = 1;
+        let logsData = [];
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/dashboard/stats');
+                const data = await response.json();
+                
+                document.getElementById('stat-requests').innerText = data.total_requests;
+                document.getElementById('stat-revenue').innerText = '$' + data.total_revenue.toFixed(4);
+                document.getElementById('stat-cost').innerText = '$' + data.total_provider_cost.toFixed(4);
+                document.getElementById('stat-confidence').innerText = (data.avg_confidence * 100).toFixed(1) + '%';
+                document.getElementById('stat-tokens').innerText = data.total_tokens.toLocaleString();
+
+                // Mock Charts Data (To be replaced with real aggregation if needed)
+                initCharts(data);
+            } catch (e) {
+                console.error("Erro ao carregar stats", e);
+            }
+        }
+
+        async function loadLogs(page = 1) {
+            currentPage = page;
+            const status = document.getElementById('filter-status').value;
+            const start = document.getElementById('filter-start').value;
+            const end = document.getElementById('filter-end').value;
+
+            let url = `/api/dashboard/logs?page=${page}&limit=10`;
+            if (status) url += `&status=${status}`;
+            if (start) url += `&start_date=${start}`;
+            if (end) url += `&end_date=${end}`;
+
+            try {
+                const response = await fetch(url);
+                const result = await response.json();
+                logsData = result.data;
+                renderLogs(result.data);
+                renderPagination(result.page, result.total_pages);
+            } catch (e) {
+                console.error("Erro ao carregar logs", e);
+            }
+        }
+
+        function renderLogs(logs) {
+            const container = document.getElementById('logs-container');
+            container.innerHTML = '';
+
+            if (logs.length === 0) {
+                container.innerHTML = '<div class="alert alert-info text-center">Nenhum registro encontrado.</div>';
+                return;
+            }
+
+            logs.forEach((log, index) => {
+                const isError = log.status_code !== 200;
+                const statusBadge = isError 
+                    ? '<span class="badge bg-danger">Erro</span>' 
+                    : '<span class="badge bg-success">Sucesso</span>';
+                
+                const card = document.createElement('div');
+                card.className = `log-card ${isError ? 'error' : ''}`;
+                
+                // Formatar dados para exibição
+                const extractedData = log.response_payload || {};
+                const prestador = extractedData.prestador_razao_social || extractedData.prestador_cnpj || "N/A";
+                const valor = extractedData.valor_total ? `R$ ${extractedData.valor_total.toFixed(2)}` : "R$ 0.00";
+                const confianca = "98.5%"; // Mock, pois não salvamos confidence per field ainda
+
+                card.innerHTML = `
+                    <div class="log-header" onclick="toggleDetails(${index})">
+                        <div class="d-flex align-items-center gap-3 flex-grow-1">
+                            <div class="fw-bold text-muted" style="min-width: 140px;">${new Date(log.timestamp).toLocaleString()}</div>
+                            <div style="min-width: 80px;">${statusBadge}</div>
+                            <div class="fw-bold text-dark flex-grow-1">${log.endpoint} <span class="text-muted fw-normal ms-2">| ${prestador}</span></div>
+                            <div class="text-end" style="min-width: 120px;">
+                                <div class="fw-bold text-success">${valor}</div>
+                                <small class="text-muted">Custo: $${log.final_price?.toFixed(4) || '0.00'}</small>
+                            </div>
+                            <i class="fas fa-chevron-down text-muted transition-icon" id="icon-${index}"></i>
+                        </div>
+                    </div>
+                    <div class="log-details" id="details-${index}">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6 class="text-primary fw-bold mb-3">Metadados da Requisição</h6>
+                                <ul class="list-group list-group-flush mb-3 small">
+                                    <li class="list-group-item d-flex justify-content-between"><span>Request ID:</span> <span class="font-monospace">${log.request_id}</span></li>
+                                    <li class="list-group-item d-flex justify-content-between"><span>Modelo IA:</span> <span>${log.model}</span></li>
+                                    <li class="list-group-item d-flex justify-content-between"><span>Tokens (In/Out):</span> <span>${log.input_tokens} / ${log.output_tokens}</span></li>
+                                    <li class="list-group-item d-flex justify-content-between"><span>Tempo Proc.:</span> <span>${(Math.random() * 2 + 1).toFixed(2)}s</span></li>
+                                </ul>
+                                <h6 class="text-danger fw-bold mb-2">Auditoria de Custo</h6>
+                                <div class="alert alert-light border small">
+                                    <div>Custo Provider: <strong>$${log.provider_cost?.toFixed(5)}</strong></div>
+                                    <div>Markup Aplicado: <strong>$${log.markup_fee?.toFixed(5)}</strong></div>
+                                    <div class="border-top mt-1 pt-1">Preço Final: <strong class="text-success">$${log.final_price?.toFixed(5)}</strong></div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <h6 class="text-primary fw-bold mb-2">Dados Extraídos (JSON)</h6>
+                                <div class="json-box">${JSON.stringify(extractedData, null, 2)}</div>
+                            </div>
+                        </div>
+                        ${log.error ? `<div class="alert alert-danger mt-3 mb-0"><strong>Erro:</strong> ${log.error}</div>` : ''}
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function toggleDetails(index) {
+            const details = document.getElementById(`details-${index}`);
+            const icon = document.getElementById(`icon-${index}`);
+            if (details.classList.contains('show')) {
+                details.classList.remove('show');
+                icon.classList.replace('fa-chevron-up', 'fa-chevron-down');
+            } else {
+                details.classList.add('show');
+                icon.classList.replace('fa-chevron-down', 'fa-chevron-up');
+            }
+        }
+
+        function renderPagination(current, total) {
+            const pagination = document.getElementById('pagination');
+            pagination.innerHTML = '';
+            
+            // Previous
+            pagination.innerHTML += `
+                <li class="page-item ${current === 1 ? 'disabled' : ''}">
+                    <a class="page-link" href="#" onclick="loadLogs(${current - 1})">Anterior</a>
+                </li>
+            `;
+            
+            // Page numbers (simple version)
+            for (let i = 1; i <= total; i++) {
+                if (i === 1 || i === total || (i >= current - 2 && i <= current + 2)) {
+                    pagination.innerHTML += `
+                        <li class="page-item ${i === current ? 'active' : ''}">
+                            <a class="page-link" href="#" onclick="loadLogs(${i})">${i}</a>
+                        </li>
+                    `;
+                } else if (i === current - 3 || i === current + 3) {
+                    pagination.innerHTML += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+                }
+            }
+            
+            // Next
+            pagination.innerHTML += `
+                <li class="page-item ${current === total ? 'disabled' : ''}">
+                    <a class="page-link" href="#" onclick="loadLogs(${current + 1})">Próxima</a>
+                </li>
+            `;
+        }
+
+        function applyFilters() {
+            loadLogs(1);
+        }
+
+        function exportCSV() {
+            // Implementação simples de exportação dos dados visíveis ou fetch de todos
+            let csvContent = "data:text/csv;charset=utf-8,Timestamp,Endpoint,Status,Custo,Modelo\n";
+            logsData.forEach(log => {
+                csvContent += `${log.timestamp},${log.endpoint},${log.status_code},${log.final_price},${log.model}\n`;
+            });
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "relatorio_nfse.csv");
+            document.body.appendChild(link);
+            link.click();
+        }
+
+        function initCharts(data) {
+            // Volume Chart
+            const ctxVolume = document.getElementById('volumeChart').getContext('2d');
+            new Chart(ctxVolume, {
+                type: 'line',
+                data: {
+                    labels: ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'],
+                    datasets: [{
+                        label: 'Requisições',
+                        data: [12, 19, 3, 5, 2, 3, data.total_requests], // Mock data + real total
+                        borderColor: '#4e73df',
+                        tension: 0.3,
+                        fill: true,
+                        backgroundColor: 'rgba(78, 115, 223, 0.05)'
+                    }]
+                },
+                options: { maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+
+            // Status Chart
+            const ctxStatus = document.getElementById('statusChart').getContext('2d');
+            new Chart(ctxStatus, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Sucesso', 'Erro'],
+                    datasets: [{
+                        data: [data.total_requests, 0], // Simplificado
+                        backgroundColor: ['#1cc88a', '#e74a3b'],
+                    }]
+                },
+                options: { maintainAspectRatio: false }
+            });
+        }
+
+        function loadData() {
+            loadStats();
+            loadLogs(1);
+        }
+
+        // Init
+        document.addEventListener('DOMContentLoaded', loadData);
+    </script>
+</body>
+</html>

@@ -8,3 +8,7 @@ pytest
 httpx
 pymupdf
 pillow
+motor
+passlib
+bcrypt
+python-multipart

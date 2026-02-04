@@ -57,6 +57,9 @@ class NFSeData(BaseModel):
     # Novos Campos Solicitados
     ibs: Optional[float] = Field(None, description="Indicador de Situação (IBS) - Numérico com 2 casas decimais")
     cbs: Optional[str] = Field(None, description="Código de Base de Substituição (CBS)")
+    
+    # Metadados de Uso (Interno/Log)
+    usage: Optional[dict] = Field(None, description="Metadados de uso da IA (tokens, custo)")
 
 class LegacyRequest(BaseModel):
     Base64File: str

@@ -1,13 +1,20 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.responses import HTMLResponse
 from app.services.openai_service import extract_data_from_pdf
 from app.models.schemas import NFSeData, PDFRequest, LegacyRequest, LegacyResponse, LegacyResult, LegacyPredictionItem
 from app.utils.logging_config import setup_logging, request_id_ctx
+from app.database import db, get_logs_collection
 from dotenv import load_dotenv
 import uvicorn
 import logging
 import base64
 import time
 import uuid
+import secrets
+from datetime import datetime
+
+# Inicializar Logs
 
 # Inicializar Logs
 setup_logging()
@@ -21,6 +28,49 @@ app = FastAPI(
     description="API para extração de dados de NFS-e com logs detalhados e métricas.",
     version="1.2.0"
 )
+
+# Segurança
+security = HTTPBasic()
+
+def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
+    correct_username = secrets.compare_digest(credentials.username, "admin")
+    correct_password = secrets.compare_digest(credentials.password, "admin@gonnect@123")
+    if not (correct_username and correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais incorretas",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
+
+@app.on_event("startup")
+async def startup_db_client():
+    db.connect()
+
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    db.close()
+
+async def log_to_mongo(endpoint: str, request_data: dict, response_data: dict, usage: dict = None, status_code: int = 200, error: str = None):
+    try:
+        logs_collection = await get_logs_collection()
+        log_entry = {
+            "timestamp": datetime.utcnow(),
+            "request_id": request_id_ctx.get(),
+            "endpoint": endpoint,
+            "status_code": status_code,
+            "model": usage.get("model") if usage else "unknown",
+            "input_tokens": usage.get("input_tokens", 0) if usage else 0,
+            "output_tokens": usage.get("output_tokens", 0) if usage else 0,
+            "total_cost": usage.get("total_cost", 0.0) if usage else 0.0,
+            "error": error,
+            # Evitar salvar Base64 muito grande no log se não for estritamente necessário para debug
+            # "request_payload": str(request_data)[:500] + "..." if request_data else None, 
+            "response_payload": response_data
+        }
+        await logs_collection.insert_one(log_entry)
+    except Exception as e:
+        logger.error(f"Erro ao salvar log no MongoDB: {str(e)}")
 
 # Middleware para Request ID e Performance
 @app.middleware("http")
@@ -77,11 +127,22 @@ async def extract_nfse(request: PDFRequest):
         
         logger.info("Extração concluída e dados validados.")
         logger.info(f"Resposta da API: {data.model_dump_json()}")
+        
+        # Logar no MongoDB
+        await log_to_mongo(
+            endpoint="/extract",
+            request_data={"pdf_base64_len": len(request.pdf_base64)},
+            response_data=data.model_dump(),
+            usage=data.usage
+        )
+        
         return data
         
     except HTTPException as he:
+        await log_to_mongo(endpoint="/extract", request_data=None, response_data=None, status_code=he.status_code, error=he.detail)
         raise he
     except Exception as e:
+        await log_to_mongo(endpoint="/extract", request_data=None, response_data=None, status_code=500, error=str(e))
         # Erro genérico capturado pelo middleware, mas logamos detalhes específicos aqui também
         logger.error(f"Erro durante o fluxo de extração: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro interno no processamento: {str(e)}")
@@ -192,17 +253,124 @@ async def extract_nfse_legacy(request: LegacyRequest):
         logger.info(f"Retornando resposta legado com {len(predictions)} campos.")
         response_obj = LegacyResponse(Result=[LegacyResult(Prediction=predictions)])
         logger.info(f"Resposta da API: {response_obj.model_dump_json()}")
+        
+        # Logar no MongoDB
+        await log_to_mongo(
+            endpoint="/api/extractData2",
+            request_data={"Base64File_len": len(request.Base64File)},
+            response_data=response_obj.model_dump(),
+            usage=data.usage # data vem do extract_data_from_pdf
+        )
+
         return response_obj
         
     except HTTPException as he:
+        await log_to_mongo(endpoint="/api/extractData2", request_data=None, response_data=None, status_code=he.status_code, error=he.detail)
         raise he
     except Exception as e:
+        await log_to_mongo(endpoint="/api/extractData2", request_data=None, response_data=None, status_code=500, error=str(e))
         logger.error(f"Erro legado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
 @app.get("/health")
 def health_check():
     return {"status": "ok", "timestamp": time.time()}
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(username: str = Depends(get_current_username)):
+    logs_collection = await get_logs_collection()
+    
+    # Agregação para totais
+    pipeline = [
+        {
+            "$group": {
+                "_id": None,
+                "total_requests": {"$sum": 1},
+                "total_input_tokens": {"$sum": "$input_tokens"},
+                "total_output_tokens": {"$sum": "$output_tokens"},
+                "total_cost": {"$sum": "$total_cost"}
+            }
+        }
+    ]
+    
+    stats = await logs_collection.aggregate(pipeline).to_list(length=1)
+    
+    if stats:
+        s = stats[0]
+        total_requests = s.get("total_requests", 0)
+        total_input = s.get("total_input_tokens", 0)
+        total_output = s.get("total_output_tokens", 0)
+        total_cost = s.get("total_cost", 0.0)
+    else:
+        total_requests = 0
+        total_input = 0
+        total_output = 0
+        total_cost = 0.0
+        
+    # Buscar últimos 10 logs
+    last_logs = await logs_collection.find().sort("timestamp", -1).limit(10).to_list(length=10)
+    
+    logs_html = ""
+    for log in last_logs:
+        logs_html += f"""
+        <tr>
+            <td>{log.get('timestamp')}</td>
+            <td>{log.get('endpoint')}</td>
+            <td>{log.get('status_code')}</td>
+            <td>{log.get('total_cost', 0):.6f}</td>
+            <td>{log.get('model')}</td>
+        </tr>
+        """
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Dashboard de Monitoramento NFSe</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 40px; }}
+            .card {{ background: #f4f4f4; padding: 20px; border-radius: 8px; margin-bottom: 20px; display: inline-block; margin-right: 20px; min-width: 200px; }}
+            .card h3 {{ margin: 0 0 10px 0; color: #333; }}
+            .card p {{ font-size: 24px; font-weight: bold; margin: 0; color: #007bff; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+            th {{ background-color: #007bff; color: white; }}
+            tr:nth-child(even) {{ background-color: #f2f2f2; }}
+        </style>
+    </head>
+    <body>
+        <h1>Dashboard de Monitoramento - API NFSe</h1>
+        
+        <div>
+            <div class="card">
+                <h3>Total Requisições</h3>
+                <p>{total_requests}</p>
+            </div>
+            <div class="card">
+                <h3>Custo Total ($)</h3>
+                <p>${total_cost:.4f}</p>
+            </div>
+            <div class="card">
+                <h3>Total Tokens (In/Out)</h3>
+                <p>{total_input} / {total_output}</p>
+            </div>
+        </div>
+        
+        <h2>Últimas Requisições</h2>
+        <table>
+            <tr>
+                <th>Data/Hora (UTC)</th>
+                <th>Endpoint</th>
+                <th>Status</th>
+                <th>Custo ($)</th>
+                <th>Modelo</th>
+            </tr>
+            {logs_html}
+        </table>
+    </body>
+    </html>
+    """
+    return html_content
 
 if __name__ == "__main__":
     # Nota: No ambiente real, use uvicorn via CLI ou python -m

@@ -215,17 +215,26 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
         total_cost = cost_input + cost_output
 
         logger.info(
-            f"Uso de Tokens: Input={{input_tokens}} | Output={{output_tokens}} | "
-            f"Custo Estimado: ${{total_cost:.6f}}"
+            f"Uso de Tokens: Input={input_tokens} | Output={output_tokens} | "
+            f"Custo Estimado: ${total_cost:.6f}"
         )
 
         # 4. Parsear e Cache
         content = response.choices[0].message.content
-        logger.debug(f"Conteúdo bruto recebido da IA: {{content}}")
+        logger.debug(f"Conteúdo bruto recebido da IA: {content}")
         
         try:
             data_dict = json.loads(content)
             result = NFSeData(**data_dict)
+            
+            # Anexar metadados de uso
+            result.usage = {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_cost": total_cost,
+                "model": "gpt-5-nano-2025-08-07"
+            }
+            
             # extraction_cache[pdf_hash] = result
             
             total_time = time.time() - start_time

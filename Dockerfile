@@ -1,5 +1,9 @@
 FROM python:3.10-slim
 
+# Evitar buffering do Python para ver logs em tempo real
+ENV PYTHONUNBUFFERED=1
+ENV PORT=8000
+
 # Instalar dependências do sistema (Poppler é obrigatório para pdf2image)
 RUN apt-get update && apt-get install -y \
     poppler-utils \

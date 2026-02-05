@@ -504,6 +504,6 @@ async def dashboard(username: str = Depends(get_current_username)):
 if __name__ == "__main__":
     # Nota: No ambiente real, use uvicorn via CLI ou python -m
     import os
-    port = int(os.getenv("PORT", 8001))
+    port = int(os.getenv("PORT", 8002))
     logger.info(f"Iniciando servidor Uvicorn na porta {port} (detectada via env PORT)...")
     uvicorn.run(app, host="0.0.0.0", port=port)

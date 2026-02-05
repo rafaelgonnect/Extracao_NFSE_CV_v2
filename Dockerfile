@@ -2,7 +2,7 @@ FROM python:3.10-slim
 
 # Evitar buffering do Python para ver logs em tempo real
 ENV PYTHONUNBUFFERED=1
-ENV PORT=8001
+ENV PORT=8002
 
 # Instalar dependências do sistema (Poppler é obrigatório para pdf2image)
 RUN apt-get update && apt-get install -y \
@@ -22,7 +22,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expor a porta
-EXPOSE 8001
+EXPOSE 8002
 
 # Comando de execução
 CMD ["python", "-m", "app.main"]

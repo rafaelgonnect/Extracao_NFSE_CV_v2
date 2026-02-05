@@ -289,7 +289,8 @@ async def extract_nfse_legacy(request: LegacyRequest):
             logger.info("ISS Retido veio nulo ou vazio. Usando default 'N'.")
                 
         add_pred("ISS_Retido", iss_retido_norm)
-        add_pred("Valor_ISS_Retido", data.valor_iss_retido, "0.00")
+        # Campo valor_iss_retido removido do schema
+        # add_pred("Valor_ISS_Retido", data.valor_iss_retido, "0.00")
         
         # Regra Contábil ISS Retido: Se "S", deduzir do líquido (caso fosse calcular, mas agora só serve para referência)
         if data.iss_retido and data.iss_retido.upper() == "S":
@@ -513,6 +514,7 @@ async def dashboard(username: str = Depends(get_current_username)):
 if __name__ == "__main__":
     # Nota: No ambiente real, use uvicorn via CLI ou python -m
     import os
-    port = int(os.getenv("PORT", 8002))
+    # Default para 80 se rodar direto
+    port = int(os.getenv("PORT", 80))
     logger.info(f"Iniciando servidor Uvicorn na porta {port} (detectada via env PORT)...")
     uvicorn.run(app, host="0.0.0.0", port=port)

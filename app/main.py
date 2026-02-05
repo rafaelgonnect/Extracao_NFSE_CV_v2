@@ -447,7 +447,8 @@ async def dashboard_logs(
     serialized_logs = []
     for log in logs:
         log["_id"] = str(log["_id"])
-        log["timestamp"] = log["timestamp"].isoformat()
+        # Adicionar Z para indicar UTC, garantindo conversão correta no frontend
+        log["timestamp"] = log["timestamp"].isoformat() + "Z"
         
         # Converter BRL para USD para exibição
         final_price = log.get("final_price", 0.0)

@@ -206,12 +206,16 @@
                 document.getElementById('stat-requests').innerText = data.total_requests;
                 
                 // Exibir Custo Total em USD apenas para Root
-                const costCard = document.getElementById('stat-cost-usd').parentElement.parentElement.parentElement;
+                // Navegar até a coluna (col-xl-3) para ocultar completamente
+                const costElement = document.getElementById('stat-cost-usd');
+                // stat-cost-usd -> col -> row -> card-body -> card -> col-xl-3
+                const costColumn = costElement.closest('.col-xl-3');
+                
                 if (isRootRafa) {
-                    document.getElementById('stat-cost-usd').innerText = '$ ' + data.total_cost_usd.toFixed(4);
-                    costCard.style.display = 'block';
+                    costElement.innerText = '$ ' + data.total_cost_usd.toFixed(4);
+                    if (costColumn) costColumn.style.display = 'block';
                 } else {
-                    costCard.style.display = 'none';
+                    if (costColumn) costColumn.style.display = 'none';
                 }
                 
                 document.getElementById('stat-confidence').innerText = (data.avg_confidence * 100).toFixed(1) + '%';

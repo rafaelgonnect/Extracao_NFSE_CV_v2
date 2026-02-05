@@ -316,15 +316,37 @@ def health_check():
 async def dashboard_stats(username: str = Depends(get_current_username)):
     logs_collection = await get_logs_collection()
     
-    # 1. Totals
+    # 1. Totals with Currency Normalization
     pipeline = [
+        {
+            "$project": {
+                "final_price": 1,
+                "input_tokens": 1,
+                "output_tokens": 1,
+                # Check if it is a new log (BRL) by looking for pure_cost_brl field
+                "is_brl": { "$ifNull": ["$pure_cost_brl", False] }
+            }
+        },
+        {
+            "$project": {
+                "normalized_cost_usd": {
+                    "$cond": {
+                        "if": { "$ne": ["$is_brl", False] },
+                        "then": { "$divide": ["$final_price", 5.5] },
+                        "else": "$final_price"
+                    }
+                },
+                "input_tokens": 1,
+                "output_tokens": 1
+            }
+        },
         {
             "$group": {
                 "_id": None,
                 "total_requests": {"$sum": 1},
                 "total_input_tokens": {"$sum": "$input_tokens"},
                 "total_output_tokens": {"$sum": "$output_tokens"},
-                "total_provider_cost_brl": {"$sum": "$provider_cost"}, # Currently stored in BRL
+                "total_cost_usd": {"$sum": "$normalized_cost_usd"},
                 "avg_confidence": {"$avg": 1.0} # Placeholder
             }
         }
@@ -369,14 +391,10 @@ async def dashboard_stats(username: str = Depends(get_current_username)):
     
     if stats:
         s = stats[0]
-        # Convert BRL to USD (Fixed Rate 5.5)
-        total_brl = s.get("total_provider_cost_brl", 0.0)
-        total_usd = total_brl / 5.5
-        
         result.update({
             "total_requests": s.get("total_requests", 0),
             "total_tokens": s.get("total_input_tokens", 0) + s.get("total_output_tokens", 0),
-            "total_cost_usd": total_usd,
+            "total_cost_usd": s.get("total_cost_usd", 0.0),
             "avg_confidence": 0.98
         })
         
@@ -425,14 +443,21 @@ async def dashboard_logs(
     cursor = logs_collection.find(query).sort("timestamp", -1).skip((page - 1) * limit).limit(limit)
     logs = await cursor.to_list(length=limit)
     
+    # Converter ObjectId e datetime para JSON
     serialized_logs = []
     for log in logs:
         log["_id"] = str(log["_id"])
         log["timestamp"] = log["timestamp"].isoformat()
         
         # Converter BRL para USD para exibição
-        final_price_brl = log.get("final_price", 0.0)
-        log["cost_usd"] = final_price_brl / 5.5
+        final_price = log.get("final_price", 0.0)
+        
+        # Se tiver o campo pure_cost_brl, é log novo (BRL), então converte
+        if "pure_cost_brl" in log:
+            log["cost_usd"] = final_price / 5.5
+        else:
+            # Log antigo (USD), usa o valor direto
+            log["cost_usd"] = final_price
         
         serialized_logs.append(log)
         

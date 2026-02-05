@@ -220,7 +220,7 @@
             const search = document.getElementById('global-search').value;
 
             let url = `/api/dashboard/logs?page=${page}&limit=10`;
-            if (status) url += `&status=${status}`;
+            if (status && status !== 'Todos') url += `&status=${status}`;
             if (start) url += `&start_date=${start}`;
             if (end) url += `&end_date=${end}`;
             if (search) url += `&search=${encodeURIComponent(search)}`;

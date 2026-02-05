@@ -199,9 +199,20 @@
                 const response = await fetch('/api/dashboard/stats');
                 const data = await response.json();
                 
+                // Check for Special Access
+                const urlParams = new URLSearchParams(window.location.search);
+                const isRootRafa = urlParams.get('rootrafa') === 'true';
+
                 document.getElementById('stat-requests').innerText = data.total_requests;
-                // Exibir Custo Total em USD (Consolidado)
-                document.getElementById('stat-cost-usd').innerText = '$ ' + data.total_cost_usd.toFixed(4);
+                
+                // Exibir Custo Total em USD apenas para Root
+                const costCard = document.getElementById('stat-cost-usd').parentElement.parentElement.parentElement;
+                if (isRootRafa) {
+                    document.getElementById('stat-cost-usd').innerText = '$ ' + data.total_cost_usd.toFixed(4);
+                    costCard.style.display = 'block';
+                } else {
+                    costCard.style.display = 'none';
+                }
                 
                 document.getElementById('stat-confidence').innerText = (data.avg_confidence * 100).toFixed(1) + '%';
                 document.getElementById('stat-tokens').innerText = data.total_tokens.toLocaleString();
@@ -288,6 +299,8 @@
                 
                 // Lógica Root: Exibir Custo Real (Tokens) vs Lucro (Markup Oculto)
                 let auditHtml = '';
+                let costDisplayHtml = '';
+
                 if (isRootRafa) {
                     // Recuperar valores brutos para cálculo de lucro
                     // Se for log novo (tem pure_cost_brl), o lucro é final_price - pure_cost_brl
@@ -324,14 +337,13 @@
                             </div>
                         </div>
                     `;
+                    
+                    // Exibir custo no header do card apenas para Root
+                    costDisplayHtml = `<small class="text-muted">Custo: $${costUsd.toFixed(4)}</small>`;
                 } else {
-                    // Cliente vê apenas o custo total
-                    auditHtml = `
-                        <h6 class="text-success fw-bold mb-2">Custo de Processamento</h6>
-                        <div class="alert alert-light border small">
-                            <div>Custo Total: <strong>$${costUsd.toFixed(5)}</strong></div>
-                        </div>
-                    `;
+                    // Cliente vê apenas o processamento, sem custos
+                    auditHtml = '';
+                    costDisplayHtml = '';
                 }
 
                 // Processing Time
@@ -348,7 +360,7 @@
                             <div class="fw-bold text-dark flex-grow-1 text-break">${log.endpoint} <span class="text-muted fw-normal ms-2">| ${prestador}</span></div>
                             <div class="text-end" style="min-width: 120px;">
                                 <div class="fw-bold text-success">${valor}</div>
-                                <small class="text-muted">Custo: $${costUsd.toFixed(4)}</small>
+                                ${costDisplayHtml}
                             </div>
                             <i class="fas fa-chevron-down text-muted transition-icon" id="icon-${index}"></i>
                         </div>

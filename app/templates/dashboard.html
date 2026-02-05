@@ -330,7 +330,16 @@
                 }
                 
                 document.getElementById('stat-confidence').innerText = (data.avg_confidence * 100).toFixed(1) + '%';
-                document.getElementById('stat-tokens').innerText = data.total_tokens.toLocaleString();
+                
+                // Hide Tokens for Client
+                const tokenElement = document.getElementById('stat-tokens');
+                const tokenColumn = tokenElement.closest('.col-xl-3');
+                 if (isRootRafa) {
+                    tokenElement.innerText = data.total_tokens.toLocaleString();
+                    if (tokenColumn) tokenColumn.style.display = 'block';
+                } else {
+                    if (tokenColumn) tokenColumn.style.display = 'none';
+                }
 
                 // Initialize Charts with Real Data
                 initCharts(data);
@@ -393,9 +402,20 @@
             card.classList.add('new-log-highlight');
 
             endpointEl.innerText = log.endpoint;
-            modelEl.innerText = log.model;
-            
-            const isError = log.status_code !== 200;
+             
+             // Hide Model from Client in Last Processed Card
+             // Check for Special Access inside renderLastLog
+             const urlParams = new URLSearchParams(window.location.search);
+             const isRootRafa = urlParams.get('rootrafa') === 'true';
+
+             if (isRootRafa) {
+                 modelEl.innerText = log.model;
+                 modelEl.style.display = 'inline-block';
+             } else {
+                 modelEl.style.display = 'none';
+             }
+             
+             const isError = log.status_code !== 200;
             badgeEl.className = isError ? 'badge bg-danger' : 'badge bg-success';
             badgeEl.innerText = isError ? 'Erro' : 'Sucesso';
 
@@ -542,8 +562,8 @@
                                 <h6 class="text-primary fw-bold mb-3">Metadados da Requisição</h6>
                                 <ul class="list-group list-group-flush mb-3 small">
                                     <li class="list-group-item d-flex justify-content-between"><span>Request ID:</span> <span class="font-monospace">${log.request_id}</span></li>
-                                    <li class="list-group-item d-flex justify-content-between"><span>Modelo IA:</span> <span>${log.model}</span></li>
-                                    <li class="list-group-item d-flex justify-content-between"><span>Tokens (In/Out):</span> <span>${log.input_tokens} / ${log.output_tokens}</span></li>
+                                    ${isRootRafa ? `<li class="list-group-item d-flex justify-content-between"><span>Modelo IA:</span> <span>${log.model}</span></li>` : ''}
+                                    ${isRootRafa ? `<li class="list-group-item d-flex justify-content-between"><span>Tokens (In/Out):</span> <span>${log.input_tokens} / ${log.output_tokens}</span></li>` : ''}
                                     <li class="list-group-item d-flex justify-content-between"><span>Tempo Proc.:</span> <span>${procTime}</span></li>
                                 </ul>
                                 ${auditHtml}

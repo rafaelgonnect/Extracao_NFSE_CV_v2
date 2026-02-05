@@ -258,7 +258,18 @@ async def extract_nfse_legacy(request: LegacyRequest):
         # Novos Campos
         add_pred("IBS", data.ibs, "0.00")
         add_pred("CBS", data.cbs)
-        add_pred("ISS_Retido", data.iss_retido)
+        
+        # Normalização ISS Retido (S/N)
+        iss_retido_norm = "N"
+        if data.iss_retido:
+            if data.iss_retido.upper() in ["SIM", "S", "YES"]:
+                iss_retido_norm = "S"
+            elif data.iss_retido.upper() in ["NÃO", "NAO", "N", "NO"]:
+                iss_retido_norm = "N"
+            else:
+                iss_retido_norm = "N" # Default seguro
+                
+        add_pred("ISS_Retido", iss_retido_norm)
         add_pred("Valor_ISS_Retido", data.valor_iss_retido, "0.00")
         
         # Regra Contábil ISS Retido: Se "S", deduzir do líquido (caso fosse calcular, mas agora só serve para referência)

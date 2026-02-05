@@ -201,9 +201,22 @@
                 const response = await fetch('/api/dashboard/stats');
                 const data = await response.json();
                 
+                // Check for Special Access
+                const urlParams = new URLSearchParams(window.location.search);
+                const isRootRafa = urlParams.get('rootrafa') === 'true';
+
                 document.getElementById('stat-requests').innerText = data.total_requests;
                 document.getElementById('stat-revenue').innerText = 'R$ ' + data.total_revenue.toFixed(2);
-                document.getElementById('stat-cost').innerText = 'R$ ' + data.total_provider_cost.toFixed(2);
+                
+                const costElement = document.getElementById('stat-cost');
+                if (isRootRafa) {
+                    costElement.innerText = 'R$ ' + data.total_provider_cost.toFixed(2);
+                    costElement.parentElement.style.display = 'inline'; // Ensure visible
+                } else {
+                    // Hide provider cost for non-root users
+                    costElement.parentElement.style.display = 'none';
+                }
+
                 document.getElementById('stat-confidence').innerText = (data.avg_confidence * 100).toFixed(1) + '%';
                 document.getElementById('stat-tokens').innerText = data.total_tokens.toLocaleString();
 

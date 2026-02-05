@@ -52,14 +52,29 @@ async def startup_db_client():
 async def shutdown_db_client():
     db.close()
 
-async def log_to_mongo(endpoint: str, request_data: dict, response_data: dict, usage: dict = None, status_code: int = 200, error: str = None):
+async def log_to_mongo(endpoint: str, request_data: dict, response_data: dict, usage: dict = None, status_code: int = 200, error: str = None, processing_time: float = 0.0):
     try:
         logs_collection = await get_logs_collection()
         
-        # Cálculo de Custo com Markup (Entre $0.010 e $0.013)
-        markup_fee = random.uniform(0.010, 0.013)
-        provider_cost = usage.get("total_cost", 0.0) if usage else 0.0
-        final_price = provider_cost + markup_fee if usage else 0.0
+        # Lógica de Custo e Conversão BRL (Taxa 5.5)
+        exchange_rate = 5.5
+        token_cost_usd = usage.get("total_cost", 0.0) if usage else 0.0
+        pure_cost_brl = token_cost_usd * exchange_rate
+        
+        # Add-ons (antigo markup, agora incorporado ao custo base)
+        add_on_usd = random.uniform(0.010, 0.013)
+        add_on_brl = add_on_usd * exchange_rate
+        
+        if usage:
+            # Armazenar custo base com adicionais já aplicados
+            provider_cost = pure_cost_brl + add_on_brl
+            markup_fee = 0.0
+            final_price = provider_cost
+        else:
+            provider_cost = 0.0
+            markup_fee = 0.0
+            final_price = 0.0
+            pure_cost_brl = 0.0
         
         log_entry = {
             "timestamp": datetime.utcnow(),
@@ -69,9 +84,11 @@ async def log_to_mongo(endpoint: str, request_data: dict, response_data: dict, u
             "model": usage.get("model") if usage else "unknown",
             "input_tokens": usage.get("input_tokens", 0) if usage else 0,
             "output_tokens": usage.get("output_tokens", 0) if usage else 0,
-            "provider_cost": provider_cost,
-            "markup_fee": markup_fee,
-            "final_price": final_price,
+            "processing_time": processing_time,
+            "provider_cost": provider_cost, # Base + Addons (BRL)
+            "markup_fee": markup_fee,       # Sempre 0
+            "final_price": final_price,     # Igual ao provider_cost
+            "pure_cost_brl": pure_cost_brl, # Custo puro para auditoria rootrafa
             "error": error,
             # Evitar salvar Base64 muito grande no log se não for estritamente necessário para debug
             # "request_payload": str(request_data)[:500] + "..." if request_data else None, 
@@ -109,6 +126,7 @@ async def log_requests_middleware(request: Request, call_next):
 
 @app.post("/extract", response_model=NFSeData)
 async def extract_nfse(request: PDFRequest):
+    start_time = time.time()
     logger.info(f"Processando documento com versão da API: {app.version}")
     logger.debug("Validando entrada Base64...")
     
@@ -138,26 +156,31 @@ async def extract_nfse(request: PDFRequest):
         logger.info(f"Resposta da API: {data.model_dump_json()}")
         
         # Logar no MongoDB
+        processing_time = time.time() - start_time
         await log_to_mongo(
             endpoint="/extract",
             request_data={"pdf_base64_len": len(request.pdf_base64)},
             response_data=data.model_dump(),
-            usage=data.usage
+            usage=data.usage,
+            processing_time=processing_time
         )
         
         return data
         
     except HTTPException as he:
-        await log_to_mongo(endpoint="/extract", request_data=None, response_data=None, status_code=he.status_code, error=he.detail)
+        processing_time = time.time() - start_time
+        await log_to_mongo(endpoint="/extract", request_data=None, response_data=None, status_code=he.status_code, error=he.detail, processing_time=processing_time)
         raise he
     except Exception as e:
-        await log_to_mongo(endpoint="/extract", request_data=None, response_data=None, status_code=500, error=str(e))
+        processing_time = time.time() - start_time
+        await log_to_mongo(endpoint="/extract", request_data=None, response_data=None, status_code=500, error=str(e), processing_time=processing_time)
         # Erro genérico capturado pelo middleware, mas logamos detalhes específicos aqui também
         logger.error(f"Erro durante o fluxo de extração: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro interno no processamento: {str(e)}")
 
 @app.post("/api/extractData2", response_model=LegacyResponse)
 async def extract_nfse_legacy(request: LegacyRequest):
+    start_time = time.time()
     logger.info(f"Processando documento com versão da API: {app.version}")
     logger.debug("Recebendo requisição legado (Base64File)...")
     
@@ -264,20 +287,24 @@ async def extract_nfse_legacy(request: LegacyRequest):
         logger.info(f"Resposta da API: {response_obj.model_dump_json()}")
         
         # Logar no MongoDB
+        processing_time = time.time() - start_time
         await log_to_mongo(
             endpoint="/api/extractData2",
             request_data={"Base64File_len": len(request.Base64File)},
             response_data=response_obj.model_dump(),
-            usage=data.usage # data vem do extract_data_from_pdf
+            usage=data.usage, # data vem do extract_data_from_pdf
+            processing_time=processing_time
         )
 
         return response_obj
         
     except HTTPException as he:
-        await log_to_mongo(endpoint="/api/extractData2", request_data=None, response_data=None, status_code=he.status_code, error=he.detail)
+        processing_time = time.time() - start_time
+        await log_to_mongo(endpoint="/api/extractData2", request_data=None, response_data=None, status_code=he.status_code, error=he.detail, processing_time=processing_time)
         raise he
     except Exception as e:
-        await log_to_mongo(endpoint="/api/extractData2", request_data=None, response_data=None, status_code=500, error=str(e))
+        processing_time = time.time() - start_time
+        await log_to_mongo(endpoint="/api/extractData2", request_data=None, response_data=None, status_code=500, error=str(e), processing_time=processing_time)
         logger.error(f"Erro legado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
@@ -289,6 +316,7 @@ def health_check():
 async def dashboard_stats(username: str = Depends(get_current_username)):
     logs_collection = await get_logs_collection()
     
+    # 1. Totals
     pipeline = [
         {
             "$group": {
@@ -305,18 +333,53 @@ async def dashboard_stats(username: str = Depends(get_current_username)):
     
     stats = await logs_collection.aggregate(pipeline).to_list(length=1)
     
+    # 2. Daily Volume (Last 7 Days)
+    today = datetime.utcnow().date()
+    dates = [(today - timedelta(days=i)) for i in range(6, -1, -1)] # 6 days ago to today
+    
+    daily_counts = {d.strftime("%Y-%m-%d"): 0 for d in dates}
+    
+    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    daily_pipeline = [
+        {"$match": {"timestamp": {"$gte": seven_days_ago}}},
+        {
+            "$group": {
+                "_id": {
+                    "$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}
+                },
+                "count": {"$sum": 1}
+            }
+        }
+    ]
+    daily_results = await logs_collection.aggregate(daily_pipeline).to_list(length=10)
+    
+    for item in daily_results:
+        d_str = item["_id"]
+        if d_str in daily_counts:
+            daily_counts[d_str] = item["count"]
+            
+    daily_volume = list(daily_counts.values())
+    # Format labels: "Seg", "Ter", etc.
+    days_pt = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom"]
+    daily_labels = [days_pt[d.weekday()] for d in dates]
+    
+    result = {
+        "total_requests": 0, "total_tokens": 0, "total_provider_cost": 0.0, "total_revenue": 0.0, "avg_confidence": 0.0,
+        "daily_volume": daily_volume,
+        "daily_labels": daily_labels
+    }
+    
     if stats:
         s = stats[0]
-        return {
+        result.update({
             "total_requests": s.get("total_requests", 0),
             "total_tokens": s.get("total_input_tokens", 0) + s.get("total_output_tokens", 0),
             "total_provider_cost": s.get("total_provider_cost", 0.0),
             "total_revenue": s.get("total_revenue", 0.0),
             "avg_confidence": 0.98 # Simulado por enquanto
-        }
-    return {
-        "total_requests": 0, "total_tokens": 0, "total_provider_cost": 0.0, "total_revenue": 0.0, "avg_confidence": 0.0
-    }
+        })
+        
+    return result
 
 @app.get("/api/dashboard/logs")
 async def dashboard_logs(

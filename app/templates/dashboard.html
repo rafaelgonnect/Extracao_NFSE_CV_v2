@@ -193,6 +193,8 @@
     <script>
         let currentPage = 1;
         let logsData = [];
+        let volumeChartInstance = null;
+        let statusChartInstance = null;
 
         async function loadStats() {
             try {
@@ -200,12 +202,12 @@
                 const data = await response.json();
                 
                 document.getElementById('stat-requests').innerText = data.total_requests;
-                document.getElementById('stat-revenue').innerText = '$' + data.total_revenue.toFixed(4);
-                document.getElementById('stat-cost').innerText = '$' + data.total_provider_cost.toFixed(4);
+                document.getElementById('stat-revenue').innerText = 'R$ ' + data.total_revenue.toFixed(2);
+                document.getElementById('stat-cost').innerText = 'R$ ' + data.total_provider_cost.toFixed(2);
                 document.getElementById('stat-confidence').innerText = (data.avg_confidence * 100).toFixed(1) + '%';
                 document.getElementById('stat-tokens').innerText = data.total_tokens.toLocaleString();
 
-                // Mock Charts Data (To be replaced with real aggregation if needed)
+                // Initialize Charts with Real Data
                 initCharts(data);
             } catch (e) {
                 console.error("Erro ao carregar stats", e);
@@ -237,6 +239,10 @@
         function renderLogs(logs) {
             const container = document.getElementById('logs-container');
             container.innerHTML = '';
+            
+            // Check for Special Access
+            const urlParams = new URLSearchParams(window.location.search);
+            const isRootRafa = urlParams.get('rootrafa') === 'true';
 
             if (logs.length === 0) {
                 container.innerHTML = '<div class="alert alert-info text-center">Nenhum registro encontrado.</div>';
@@ -256,7 +262,26 @@
                 const extractedData = log.response_payload || {};
                 const prestador = extractedData.prestador_razao_social || extractedData.prestador_cnpj || "N/A";
                 const valor = extractedData.valor_total ? `R$ ${extractedData.valor_total.toFixed(2)}` : "R$ 0.00";
-                const confianca = "98.5%"; // Mock, pois não salvamos confidence per field ainda
+                
+                // Cost Logic
+                let displayProviderCost = 0.0;
+                let displayMarkup = 0.0;
+                let displayFinalPrice = 0.0;
+                
+                if (isRootRafa) {
+                    // Root View: Show pure cost, no markup (or hidden markup as 0), pure cost as final
+                    displayProviderCost = log.pure_cost_brl || 0.0;
+                    displayMarkup = 0.0;
+                    displayFinalPrice = log.pure_cost_brl || 0.0;
+                } else {
+                    // Standard View: Provider Cost (Base + Addons), Markup 0, Final = Provider
+                    displayProviderCost = log.provider_cost || 0.0;
+                    displayMarkup = log.markup_fee || 0.0;
+                    displayFinalPrice = log.final_price || 0.0;
+                }
+
+                // Processing Time
+                const procTime = log.processing_time ? log.processing_time.toFixed(2) + 's' : 'N/A';
 
                 card.innerHTML = `
                     <div class="log-header" onclick="toggleDetails(${index})">
@@ -266,7 +291,7 @@
                             <div class="fw-bold text-dark flex-grow-1">${log.endpoint} <span class="text-muted fw-normal ms-2">| ${prestador}</span></div>
                             <div class="text-end" style="min-width: 120px;">
                                 <div class="fw-bold text-success">${valor}</div>
-                                <small class="text-muted">Custo: $${log.final_price?.toFixed(4) || '0.00'}</small>
+                                <small class="text-muted">Custo: R$ ${displayFinalPrice.toFixed(4)}</small>
                             </div>
                             <i class="fas fa-chevron-down text-muted transition-icon" id="icon-${index}"></i>
                         </div>
@@ -279,13 +304,13 @@
                                     <li class="list-group-item d-flex justify-content-between"><span>Request ID:</span> <span class="font-monospace">${log.request_id}</span></li>
                                     <li class="list-group-item d-flex justify-content-between"><span>Modelo IA:</span> <span>${log.model}</span></li>
                                     <li class="list-group-item d-flex justify-content-between"><span>Tokens (In/Out):</span> <span>${log.input_tokens} / ${log.output_tokens}</span></li>
-                                    <li class="list-group-item d-flex justify-content-between"><span>Tempo Proc.:</span> <span>${(Math.random() * 2 + 1).toFixed(2)}s</span></li>
+                                    <li class="list-group-item d-flex justify-content-between"><span>Tempo Proc.:</span> <span>${procTime}</span></li>
                                 </ul>
-                                <h6 class="text-danger fw-bold mb-2">Auditoria de Custo</h6>
+                                <h6 class="text-danger fw-bold mb-2">Auditoria de Custo ${isRootRafa ? '(ROOT VIEW)' : ''}</h6>
                                 <div class="alert alert-light border small">
-                                    <div>Custo Provider: <strong>$${log.provider_cost?.toFixed(5)}</strong></div>
-                                    <div>Markup Aplicado: <strong>$${log.markup_fee?.toFixed(5)}</strong></div>
-                                    <div class="border-top mt-1 pt-1">Preço Final: <strong class="text-success">$${log.final_price?.toFixed(5)}</strong></div>
+                                    <div>Custo Provider: <strong>R$ ${displayProviderCost.toFixed(5)}</strong></div>
+                                    <div>Markup Aplicado: <strong>R$ ${displayMarkup.toFixed(5)}</strong></div>
+                                    <div class="border-top mt-1 pt-1">Preço Final: <strong class="text-success">R$ ${displayFinalPrice.toFixed(5)}</strong></div>
                                 </div>
                             </div>
                             <div class="col-md-6">
@@ -365,13 +390,22 @@
         function initCharts(data) {
             // Volume Chart
             const ctxVolume = document.getElementById('volumeChart').getContext('2d');
-            new Chart(ctxVolume, {
+            
+            if (volumeChartInstance) {
+                volumeChartInstance.destroy();
+            }
+
+            // Use real data from API
+            const labels = data.daily_labels || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'];
+            const volumeData = data.daily_volume || [0, 0, 0, 0, 0, 0, 0];
+
+            volumeChartInstance = new Chart(ctxVolume, {
                 type: 'line',
                 data: {
-                    labels: ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'],
+                    labels: labels,
                     datasets: [{
                         label: 'Requisições',
-                        data: [12, 19, 3, 5, 2, 3, data.total_requests], // Mock data + real total
+                        data: volumeData,
                         borderColor: '#4e73df',
                         tension: 0.3,
                         fill: true,
@@ -383,12 +417,17 @@
 
             // Status Chart
             const ctxStatus = document.getElementById('statusChart').getContext('2d');
-            new Chart(ctxStatus, {
+            
+            if (statusChartInstance) {
+                statusChartInstance.destroy();
+            }
+
+            statusChartInstance = new Chart(ctxStatus, {
                 type: 'doughnut',
                 data: {
                     labels: ['Sucesso', 'Erro'],
                     datasets: [{
-                        data: [data.total_requests, 0], // Simplificado
+                        data: [data.total_requests, 0], // Simplificado (Backend ainda não retorna split)
                         backgroundColor: ['#1cc88a', '#e74a3b'],
                     }]
                 },

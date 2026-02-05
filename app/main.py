@@ -263,25 +263,9 @@ async def extract_nfse_legacy(request: LegacyRequest):
         
         # Valor Líquido - Formatação BRL 9.999,99
         val_liq = data.valor_liquido
-        if val_liq is None and data.valor_total is not None:
-             # Regra básica se nulo: Total - Retenções
-             # Assumindo 0 se retenções nulas
-             retencoes = (data.valor_pis or 0) + (data.valor_cofins or 0) + (data.valor_inss or 0) + (data.valor_ir or 0) + (data.valor_csll or 0)
-             
-             # Regra Contábil ISS Retido: Se "sim", deduzir do líquido
-            if data.iss_retido and data.iss_retido.lower() == "sim":
-                # Se houver valor explícito de ISS Retido, usa-o.
-                # Se for 0.00 ou null, tenta usar o Valor do ISS normal como fallback.
-                iss_deduction = 0.0
-                if data.valor_iss_retido is not None and data.valor_iss_retido > 0:
-                     iss_deduction = data.valor_iss_retido
-                else:
-                     # Fallback: Se retido mas sem valor específico, assume o valor do ISS
-                     iss_deduction = data.valor_iss or 0.0
-                     
-                retencoes += iss_deduction
-                
-            val_liq = data.valor_total - retencoes
+        if val_liq is None:
+             # Se a IA não extraiu o líquido, retornar 0.00
+             val_liq = 0.00
         
         val_liq_str = "0,00"
         if val_liq is not None:

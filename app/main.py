@@ -510,7 +510,7 @@ async def dashboard_logs(
 async def stats_ranking(username: str = Depends(get_current_username)):
     logs_collection = await get_logs_collection()
 
-    # Filtro Base: Endpoints válidos e payload existente
+    # Filtro Base
     match_stage = {
         "$match": {
             "endpoint": {"$in": ["/extract", "/api/extractData2"]},
@@ -518,28 +518,133 @@ async def stats_ranking(username: str = Depends(get_current_username)):
         }
     }
 
+    # Estágio de Normalização (Critical Fix for Legacy Data)
+    # Extrai valor_total, prestador e tomador de ambas as estruturas (nova e legada)
+    normalize_stage = {
+        "$addFields": {
+            # Tenta pegar da estrutura nova, se não existir, tenta da legada
+            "normalized_value": {
+                "$ifNull": [
+                    "$response_payload.valor_total", # Novo
+                    {
+                        "$let": {
+                            "vars": {
+                                "targetObj": {
+                                    "$arrayElemAt": [
+                                        {
+                                            "$filter": {
+                                                "input": { "$ifNull": ["$response_payload.Result.0.Prediction", []] },
+                                                "as": "item",
+                                                "cond": { "$eq": ["$$item.Label", "Valor_Total"] }
+                                            }
+                                        },
+                                        0
+                                    ]
+                                }
+                            },
+                            "in": "$$targetObj.OCR_Text"
+                        }
+                    }
+                ]
+            },
+            "normalized_provider": {
+                "$ifNull": [
+                    "$response_payload.prestador_razao_social", # Novo
+                    {
+                        "$let": {
+                            "vars": {
+                                "targetObj": {
+                                    "$arrayElemAt": [
+                                        {
+                                            "$filter": {
+                                                "input": { "$ifNull": ["$response_payload.Result.0.Prediction", []] },
+                                                "as": "item",
+                                                "cond": { "$in": ["$$item.Label", ["CNPJ_Prest", "Prestador"]] }
+                                            }
+                                        },
+                                        0
+                                    ]
+                                }
+                            },
+                            "in": "$$targetObj.OCR_Text"
+                        }
+                    }
+                ]
+            },
+            "normalized_taker": {
+                "$ifNull": [
+                    "$response_payload.tomador_razao_social", # Novo
+                    {
+                        "$let": {
+                            "vars": {
+                                "targetObj": {
+                                    "$arrayElemAt": [
+                                        {
+                                            "$filter": {
+                                                "input": { "$ifNull": ["$response_payload.Result.0.Prediction", []] },
+                                                "as": "item",
+                                                "cond": { "$in": ["$$item.Label", ["CNPJ_Tom", "Tomador"]] }
+                                            }
+                                        },
+                                        0
+                                    ]
+                                }
+                            },
+                            "in": "$$targetObj.OCR_Text"
+                        }
+                    }
+                ]
+            }
+        }
+    }
+
+    # Estágio de Conversão de Tipo (String -> Double)
+    # O valor legado vem como string "304.00". O novo vem como float.
+    convert_stage = {
+        "$addFields": {
+            "numeric_value": {
+                "$cond": {
+                    "if": { "$isNumber": "$normalized_value" },
+                    "then": "$normalized_value",
+                    "else": { "$toDouble": "$normalized_value" } # Tenta converter string para double
+                }
+            }
+        }
+    }
+
     # 1. KPIs Globais
     kpi_pipeline = [
         match_stage,
+        normalize_stage,
+        convert_stage,
         {
             "$group": {
                 "_id": None,
                 "total_notes": {"$sum": 1},
-                "total_value": {"$sum": "$response_payload.valor_total"},
+                "total_value": {"$sum": "$numeric_value"},
             }
         }
     ]
-    kpi_result = await logs_collection.aggregate(kpi_pipeline).to_list(length=1)
-    kpis = kpi_result[0] if kpi_result else {"total_notes": 0, "total_value": 0.0}
+    
+    # Executa KPI com tratamento de erro silencioso para conversão
+    try:
+        kpi_result = await logs_collection.aggregate(kpi_pipeline).to_list(length=1)
+        kpis = kpi_result[0] if kpi_result else {"total_notes": 0, "total_value": 0.0}
+    except Exception as e:
+        logger.error(f"Erro na agregação de KPIs: {e}")
+        kpis = {"total_notes": 0, "total_value": 0.0}
+        
     kpis["avg_ticket"] = kpis["total_value"] / kpis["total_notes"] if kpis["total_notes"] > 0 else 0.0
 
     # 2. Ranking Prestadores (Top 10 por Valor)
     providers_pipeline = [
         match_stage,
+        normalize_stage,
+        convert_stage,
         {
             "$group": {
-                "_id": "$response_payload.prestador_razao_social",
-                "total_value": {"$sum": "$response_payload.valor_total"}
+                "_id": "$normalized_provider",
+                "total_value": {"$sum": "$numeric_value"}
             }
         },
         {"$sort": {"total_value": -1}},
@@ -550,10 +655,12 @@ async def stats_ranking(username: str = Depends(get_current_username)):
     # 3. Ranking Tomadores (Top 10 por Valor)
     takers_pipeline = [
         match_stage,
+        normalize_stage,
+        convert_stage,
         {
             "$group": {
-                "_id": "$response_payload.tomador_razao_social",
-                "total_value": {"$sum": "$response_payload.valor_total"}
+                "_id": "$normalized_taker",
+                "total_value": {"$sum": "$numeric_value"}
             }
         },
         {"$sort": {"total_value": -1}},
@@ -562,7 +669,6 @@ async def stats_ranking(username: str = Depends(get_current_username)):
     takers = await logs_collection.aggregate(takers_pipeline).to_list(length=10)
 
     # 4. Timeline (Volume Diário)
-    # Ajuste para timezone -3 (Brasília)
     timeline_pipeline = [
         match_stage,
         {

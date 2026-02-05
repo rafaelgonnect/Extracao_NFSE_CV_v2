@@ -268,8 +268,8 @@ async def extract_nfse_legacy(request: LegacyRequest):
         add_pred("IBS", data.ibs, "0.00")
         add_pred("CBS", data.cbs)
         
-        # Normalização ISS Retido (S/N)
-        iss_retido_norm = "N"
+        # Normalização ISS Retido (Sim/Não)
+        iss_retido_norm = "Não"
         raw_iss = data.iss_retido
         
         if raw_iss:
@@ -279,14 +279,14 @@ async def extract_nfse_legacy(request: LegacyRequest):
             logger.info(f"Normalizando ISS Retido: Original='{raw_iss}' -> Norm='{normalized_str}'")
             
             if normalized_str in ["SIM", "S", "YES", "1"]:
-                iss_retido_norm = "S"
+                iss_retido_norm = "Sim"
             elif normalized_str in ["NAO", "N", "NO", "0"]:
-                iss_retido_norm = "N"
+                iss_retido_norm = "Não"
             else:
-                logger.warning(f"Valor de ISS Retido não reconhecido na normalização: '{raw_iss}'. Usando default 'N'.")
-                iss_retido_norm = "N" # Default seguro
+                logger.warning(f"Valor de ISS Retido não reconhecido na normalização: '{raw_iss}'. Usando default 'Não'.")
+                iss_retido_norm = "Não" # Default seguro
         else:
-            logger.info("ISS Retido veio nulo ou vazio. Usando default 'N'.")
+            logger.info("ISS Retido veio nulo ou vazio. Usando default 'Não'.")
                 
         add_pred("ISS_Retido", iss_retido_norm)
         # Campo valor_iss_retido removido do schema

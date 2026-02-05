@@ -18,11 +18,15 @@ COPY requirements.txt .
 # Instalar dependências Python
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copiar o script de entrypoint e dar permissão de execução
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
 # Copiar o restante do código
 COPY . .
 
-# Expor a porta
-EXPOSE 8002
+# Expor a porta 80 (padrão container)
+EXPOSE 80
 
-# Comando de execução
-CMD ["python", "-m", "app.main"]
+# Comando de execução usando o entrypoint script
+CMD ["./entrypoint.sh"]

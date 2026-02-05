@@ -295,11 +295,15 @@
                                  !document.getElementById('filter-start').value && 
                                  !document.getElementById('global-search').value;
 
+            // Check if user is interacting with any log (expanded view)
+            // If true, we pause log list updates to prevent closing the detailed view
+            const isAnyLogOpen = document.querySelector('.log-details.show') !== null;
+
             // Always update Stats and Health
             await checkHealth();
             await loadStats();
 
-            if (isFirstPage && hasNoFilters) {
+            if (isFirstPage && hasNoFilters && !isAnyLogOpen) {
                 // Background update for logs
                 await loadLogs(1, true); // true = silent mode (no loading spinner)
             }

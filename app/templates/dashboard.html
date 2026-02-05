@@ -278,8 +278,56 @@
                 const valor = extractedData.valor_total ? `R$ ${extractedData.valor_total.toFixed(2)}` : "R$ 0.00";
                 
                 // Cost Logic (USD Only)
-                // Backend returns cost_usd which is (final_price_brl / 5.5)
+                // Backend returns cost_usd which is (final_price_brl / 5.5) or original USD
                 const costUsd = log.cost_usd || 0.0;
+                
+                // Lógica Root: Exibir Custo Real (Tokens) vs Lucro (Markup Oculto)
+                let auditHtml = '';
+                if (isRootRafa) {
+                    // Recuperar valores brutos para cálculo de lucro
+                    // Se for log novo (tem pure_cost_brl), o lucro é final_price - pure_cost_brl
+                    // Se for log antigo (tem markup_fee > 0), o lucro é markup_fee
+                    
+                    let realCostUsd = 0.0;
+                    let profitUsd = 0.0;
+                    
+                    if (log.pure_cost_brl) {
+                        // Novo modelo: tudo em BRL no banco
+                        const pureBrl = log.pure_cost_brl;
+                        const totalBrl = log.final_price || 0.0;
+                        const profitBrl = totalBrl - pureBrl;
+                        
+                        realCostUsd = pureBrl / 5.5;
+                        profitUsd = profitBrl / 5.5;
+                    } else {
+                        // Modelo antigo: tudo em USD no banco
+                        const providerCost = log.provider_cost || 0.0;
+                        const markup = log.markup_fee || 0.0;
+                        
+                        // No modelo antigo, provider_cost era o custo puro (tokens)
+                        realCostUsd = providerCost;
+                        profitUsd = markup;
+                    }
+                    
+                    auditHtml = `
+                        <h6 class="text-warning fw-bold mb-2">Auditoria de Lucro (Root)</h6>
+                        <div class="alert alert-warning border small">
+                            <div class="d-flex justify-content-between"><span>Custo Real (Tokens):</span> <strong>$${realCostUsd.toFixed(5)}</strong></div>
+                            <div class="d-flex justify-content-between"><span>Preço Cliente:</span> <strong>$${costUsd.toFixed(5)}</strong></div>
+                            <div class="border-top mt-1 pt-1 d-flex justify-content-between text-success">
+                                <span>Lucro Líquido:</span> <strong>$${profitUsd.toFixed(5)}</strong>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    // Cliente vê apenas o custo total
+                    auditHtml = `
+                        <h6 class="text-success fw-bold mb-2">Custo de Processamento</h6>
+                        <div class="alert alert-light border small">
+                            <div>Custo Total: <strong>$${costUsd.toFixed(5)}</strong></div>
+                        </div>
+                    `;
+                }
 
                 // Processing Time
                 let procTime = '<span class="text-muted fst-italic" title="Dado não coletado em versões anteriores">Não disp. (Legado)</span>';
@@ -310,10 +358,7 @@
                                     <li class="list-group-item d-flex justify-content-between"><span>Tokens (In/Out):</span> <span>${log.input_tokens} / ${log.output_tokens}</span></li>
                                     <li class="list-group-item d-flex justify-content-between"><span>Tempo Proc.:</span> <span>${procTime}</span></li>
                                 </ul>
-                                <h6 class="text-success fw-bold mb-2">Custo de Processamento</h6>
-                                <div class="alert alert-light border small">
-                                    <div>Custo Total: <strong>$${costUsd.toFixed(5)}</strong></div>
-                                </div>
+                                ${auditHtml}
                             </div>
                             <div class="col-md-6">
                                 <h6 class="text-primary fw-bold mb-2">Dados Extraídos (JSON)</h6>

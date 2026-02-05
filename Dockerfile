@@ -18,9 +18,18 @@ COPY requirements.txt .
 # Instalar dependências Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar o script de entrypoint e dar permissão de execução
-COPY entrypoint.sh .
-RUN chmod +x entrypoint.sh
+# Criar o script de entrypoint diretamente no build para garantir LF (Linux)
+# e evitar erros de CRLF do Windows
+RUN printf '#!/bin/bash\n\
+set -e\n\
+echo "--- ENTRYPOINT INICIADO ---"\n\
+export PORT=${PORT:-80}\n\
+echo "--- PORTA CONFIGURADA: $PORT ---"\n\
+exec python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT\n\
+' > /app/entrypoint.sh
+
+# Dar permissão de execução
+RUN chmod +x /app/entrypoint.sh
 
 # Copiar o restante do código
 COPY . .
@@ -28,5 +37,5 @@ COPY . .
 # Expor a porta 80 (padrão container)
 EXPOSE 80
 
-# Comando de execução usando o entrypoint script
-CMD ["./entrypoint.sh"]
+# Comando de execução usando o entrypoint script criado
+CMD ["/app/entrypoint.sh"]

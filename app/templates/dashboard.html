@@ -28,23 +28,79 @@
         .json-box { background: #2d2d2d; color: #76d7c4; padding: 15px; border-radius: 6px; font-family: monospace; font-size: 12px; max-height: 300px; overflow-y: auto; }
         .badge-status { font-size: 0.8em; padding: 5px 10px; }
         .filter-bar { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        
+        /* Status Indicator Styles */
+        .status-indicator { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.9rem; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        .status-online { background-color: #1cc88a; box-shadow: 0 0 5px #1cc88a; }
+        .status-offline { background-color: #e74a3b; box-shadow: 0 0 5px #e74a3b; }
+        
+        /* Last Processed Card Animation */
+        @keyframes highlightFade {
+            0% { background-color: rgba(78, 115, 223, 0.1); }
+            100% { background-color: white; }
+        }
+        .new-log-highlight { animation: highlightFade 2s ease-out; }
     </style>
 </head>
 <body>
 
     <!-- Main Content -->
     <div class="main-content">
+        
+        <!-- Mobile Status Indicator (First thing on mobile) -->
+        <div class="d-block d-md-none mb-3 p-2 bg-white rounded shadow-sm text-center">
+            <div class="status-indicator justify-content-center" id="status-indicator-mobile">
+                <span class="status-dot status-offline"></span>
+                <span class="status-text">Verificando...</span>
+            </div>
+        </div>
+
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-            <div class="d-flex align-items-center">
-                <i class="fas fa-robot fa-2x text-primary me-3"></i>
-                <div>
-                    <h2 class="mb-0">Dashboard Analítico</h2>
-                    <small class="text-muted">v1.3.1</small>
+            <div class="d-flex align-items-center flex-wrap gap-3">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-robot fa-2x text-primary me-3"></i>
+                    <div>
+                        <h2 class="mb-0">Dashboard Analítico</h2>
+                        <small class="text-muted">v1.3.1</small>
+                    </div>
+                </div>
+                
+                <!-- Desktop Status Indicator (Next to title) -->
+                <div class="d-none d-md-inline-block ms-4 px-3 py-1 bg-white rounded shadow-sm">
+                    <div class="status-indicator" id="status-indicator-desktop">
+                        <span class="status-dot status-offline"></span>
+                        <span class="status-text">Verificando...</span>
+                    </div>
                 </div>
             </div>
+            
             <div>
-                <button class="btn btn-outline-primary me-2" onclick="loadData()"><i class="fas fa-sync-alt"></i> Atualizar</button>
+                <button class="btn btn-outline-primary me-2" onclick="forceRefresh()"><i class="fas fa-sync-alt"></i> Atualizar</button>
                 <button class="btn btn-success" onclick="exportCSV()"><i class="fas fa-file-csv"></i> Exportar CSV</button>
+            </div>
+        </div>
+
+        <!-- Last Processed Summary Card -->
+        <div class="card border-left-primary shadow h-100 py-2 mb-4" id="last-processed-card" style="display: none;">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Último Processamento</div>
+                        <div class="d-flex align-items-center gap-3 flex-wrap">
+                            <div class="h5 mb-0 font-weight-bold text-gray-800" id="last-endpoint">...</div>
+                            <span class="badge bg-secondary" id="last-model">...</span>
+                            <span class="small text-muted" id="last-time">...</span>
+                            <span id="last-status-badge"></span>
+                        </div>
+                        <div class="mt-2 small text-muted">
+                            <i class="far fa-clock me-1"></i> <span id="last-timestamp">...</span>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-history fa-2x text-gray-300"></i>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -193,6 +249,61 @@
         let volumeChartInstance = null;
         let statusChartInstance = null;
         let searchTimeout = null;
+        
+        // Polling Variables
+        let pollingInterval = null;
+        const POLLING_RATE = 5000; // 5 seconds
+        let lastLogId = null;
+
+        async function checkHealth() {
+            try {
+                const response = await fetch('/health');
+                const isOnline = response.ok;
+                updateStatusIndicator(isOnline);
+            } catch (e) {
+                updateStatusIndicator(false);
+            }
+        }
+
+        function updateStatusIndicator(isOnline) {
+            const elements = [
+                document.getElementById('status-indicator-mobile'),
+                document.getElementById('status-indicator-desktop')
+            ];
+
+            elements.forEach(el => {
+                if (!el) return;
+                const dot = el.querySelector('.status-dot');
+                const text = el.querySelector('.status-text');
+
+                if (isOnline) {
+                    dot.className = 'status-dot status-online';
+                    text.innerText = 'Serviço Online';
+                    text.className = 'status-text text-success';
+                } else {
+                    dot.className = 'status-dot status-offline';
+                    text.innerText = 'Serviço Offline';
+                    text.className = 'status-text text-danger';
+                }
+            });
+        }
+
+        async function updateDashboard() {
+            // Only auto-update logs if on first page and not searching/filtering
+            const isFirstPage = currentPage === 1;
+            const hasNoFilters = !document.getElementById('filter-status').value && 
+                                 !document.getElementById('filter-start').value && 
+                                 !document.getElementById('global-search').value;
+
+            // Always update Stats and Health
+            await checkHealth();
+            await loadStats();
+
+            if (isFirstPage && hasNoFilters) {
+                // Background update for logs
+                await loadLogs(1, true); // true = silent mode (no loading spinner)
+            }
+        }
 
         async function loadStats() {
             try {
@@ -228,7 +339,7 @@
             }
         }
 
-        async function loadLogs(page = 1) {
+        async function loadLogs(page = 1, silent = false) {
             currentPage = page;
             const status = document.getElementById('filter-status').value;
             const start = document.getElementById('filter-start').value;
@@ -242,14 +353,70 @@
             if (search) url += `&search=${encodeURIComponent(search)}`;
 
             try {
+                if (!silent) {
+                    document.getElementById('logs-container').innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>';
+                }
+                
                 const response = await fetch(url);
                 const result = await response.json();
                 logsData = result.data;
                 renderLogs(result.data);
+                
+                // Update Last Processed Card if new data
+                if (result.data.length > 0) {
+                    const latest = result.data[0];
+                    if (lastLogId !== latest._id) {
+                        lastLogId = latest._id;
+                        renderLastLog(latest);
+                    }
+                }
+                
                 renderPagination(result.page, result.total_pages);
             } catch (e) {
                 console.error("Erro ao carregar logs", e);
             }
+        }
+        
+        function renderLastLog(log) {
+            const card = document.getElementById('last-processed-card');
+            const endpointEl = document.getElementById('last-endpoint');
+            const modelEl = document.getElementById('last-model');
+            const timeEl = document.getElementById('last-time');
+            const badgeEl = document.getElementById('last-status-badge');
+            const timestampEl = document.getElementById('last-timestamp');
+
+            if (!log) return;
+
+            card.style.display = 'block';
+            card.classList.remove('new-log-highlight');
+            void card.offsetWidth; // Trigger reflow
+            card.classList.add('new-log-highlight');
+
+            endpointEl.innerText = log.endpoint;
+            modelEl.innerText = log.model;
+            
+            const isError = log.status_code !== 200;
+            badgeEl.className = isError ? 'badge bg-danger' : 'badge bg-success';
+            badgeEl.innerText = isError ? 'Erro' : 'Sucesso';
+
+            if (log.processing_time) {
+                timeEl.innerText = log.processing_time.toFixed(2) + 's';
+            } else {
+                timeEl.innerText = 'N/A';
+            }
+            
+            // Format timestamp nicely
+            const date = new Date(log.timestamp);
+            timestampEl.innerText = date.toLocaleString();
+        }
+
+        function forceRefresh() {
+            updateDashboard();
+        }
+
+        function startPolling() {
+            updateDashboard(); // Initial run
+            pollingInterval = setInterval(updateDashboard, POLLING_RATE);
         }
 
         function debounceSearch() {
@@ -509,7 +676,9 @@
         }
 
         // Init
-        document.addEventListener('DOMContentLoaded', loadData);
+        document.addEventListener('DOMContentLoaded', () => {
+            startPolling();
+        });
     </script>
 </body>
 </html>

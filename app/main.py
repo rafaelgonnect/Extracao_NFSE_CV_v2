@@ -355,18 +355,19 @@ async def dashboard_stats(username: str = Depends(get_current_username)):
     stats = await logs_collection.aggregate(pipeline).to_list(length=1)
     
     # 2. Daily Volume (Last 7 Days)
-    today = datetime.utcnow().date()
+    # Ajustar para Horário de Brasília (UTC-3)
+    today = (datetime.utcnow() - timedelta(hours=3)).date()
     dates = [(today - timedelta(days=i)) for i in range(6, -1, -1)] # 6 days ago to today
     
     daily_counts = {d.strftime("%Y-%m-%d"): 0 for d in dates}
     
-    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    seven_days_ago = datetime.utcnow() - timedelta(days=8) # Pega um dia a mais de margem para garantir cobertura UTC
     daily_pipeline = [
         {"$match": {"timestamp": {"$gte": seven_days_ago}}},
         {
             "$group": {
                 "_id": {
-                    "$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}
+                    "$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp", "timezone": "-03:00"}
                 },
                 "count": {"$sum": 1}
             }

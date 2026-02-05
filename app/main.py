@@ -261,6 +261,10 @@ async def extract_nfse_legacy(request: LegacyRequest):
         add_pred("ISS_Retido", data.iss_retido)
         add_pred("Valor_ISS_Retido", data.valor_iss_retido, "0.00")
         
+        # Regra Contábil ISS Retido: Se "S", deduzir do líquido (caso fosse calcular, mas agora só serve para referência)
+        if data.iss_retido and data.iss_retido.upper() == "S":
+            pass # Lógica removida, mantendo bloco apenas para referência futura se necessário
+        
         # Valor Líquido - Formatação BRL 9.999,99
         val_liq = data.valor_liquido
         if val_liq is None:

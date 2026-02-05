@@ -260,7 +260,18 @@
                 
                 // Formatar dados para exibição
                 const extractedData = log.response_payload || {};
-                const prestador = extractedData.prestador_razao_social || extractedData.prestador_cnpj || "N/A";
+                
+                // Lógica aprimorada para obter o prestador (suporte a legado e novo)
+                let prestador = "N/A";
+                if (extractedData.Result && extractedData.Result[0] && extractedData.Result[0].Prediction) {
+                    // Estrutura legado (/api/extractData2)
+                    const pred = extractedData.Result[0].Prediction.find(p => p.Label === "CNPJ_Prest" || p.Label === "Prestador");
+                    if (pred) prestador = pred.OCR_Text;
+                } else {
+                    // Estrutura nova (/extract)
+                    prestador = extractedData.prestador_razao_social || extractedData.prestador_cnpj || "N/A";
+                }
+
                 const valor = extractedData.valor_total ? `R$ ${extractedData.valor_total.toFixed(2)}` : "R$ 0.00";
                 
                 // Cost Logic
@@ -274,14 +285,30 @@
                     displayMarkup = 0.0;
                     displayFinalPrice = log.pure_cost_brl || 0.0;
                 } else {
-                    // Standard View: Provider Cost (Base + Addons), Markup 0, Final = Provider
-                    displayProviderCost = log.provider_cost || 0.0;
-                    displayMarkup = log.markup_fee || 0.0;
-                    displayFinalPrice = log.final_price || 0.0;
+                    // Standard View: 
+                    // Se for log antigo (tem markup_fee > 0), somamos ao provider_cost para esconder o markup visualmente.
+                    // Se for log novo (markup_fee = 0), provider_cost já é o total.
+                    const rawMarkup = log.markup_fee || 0.0;
+                    const rawProvider = log.provider_cost || 0.0;
+                    
+                    if (rawMarkup > 0 && log.final_price) {
+                         // Log antigo: Provider Cost Visual = Final Price
+                         displayProviderCost = log.final_price;
+                         displayMarkup = 0.0;
+                         displayFinalPrice = log.final_price;
+                    } else {
+                         // Log novo ou sem markup
+                         displayProviderCost = rawProvider;
+                         displayMarkup = 0.0; // Força visualização 0
+                         displayFinalPrice = log.final_price || 0.0;
+                    }
                 }
 
                 // Processing Time
-                const procTime = log.processing_time ? log.processing_time.toFixed(2) + 's' : 'N/A';
+                let procTime = '<span class="text-muted fst-italic" title="Dado não coletado em versões anteriores">Não disp. (Legado)</span>';
+                if (log.processing_time !== undefined && log.processing_time !== null) {
+                    procTime = log.processing_time.toFixed(2) + 's';
+                }
 
                 card.innerHTML = `
                     <div class="log-header" onclick="toggleDetails(${index})">

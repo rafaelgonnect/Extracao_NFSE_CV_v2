@@ -1,3 +1,5 @@
+print("--- INICIANDO CARGA DO MAIN.PY ---", flush=True)
+
 from fastapi import FastAPI, HTTPException, Request, Depends, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import HTMLResponse
@@ -46,7 +48,14 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
 
 @app.on_event("startup")
 async def startup_db_client():
-    db.connect()
+    print("--- TENTANDO CONECTAR AO BANCO ---", flush=True)
+    try:
+        db.connect()
+        print("--- CONEXAO BANCO SUCESSO ---", flush=True)
+    except Exception as e:
+        print(f"--- ERRO CRITICO AO CONECTAR BANCO: {e} ---", flush=True)
+        # Não damos raise aqui para permitir que o app suba e possamos ver os logs,
+        # mas o endpoint de health/dashboard vai falhar se precisar do banco.
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

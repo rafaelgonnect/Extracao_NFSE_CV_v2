@@ -142,44 +142,38 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
            
            REGRAS OBRIGATÓRIAS PARA ISS RETIDO (SIGA A HIERARQUIA):
            
-           REGRA 1 (PRIORIDADE MÁXIMA) - Campo explícito:
-           Se existir "ISS Retido: SIM/NÃO", "ISS Retido na Fonte", "Retenção de ISS":
-           - Se indicar SIM -> iss_retido = "sim"
-           - Se indicar NÃO -> iss_retido = "não"
-           - Se houver valor associado (ex: "ISS Retido: R$ 50,00"), extraia para valor_iss_retido.
-           
-           REGRA 2 - Valor > 0:
-           Se existir campo textual "Valor ISS Retido", "ISSQN Retido" e valor > 0:
-           - iss_retido = "sim"
-           - valor_iss_retido = valor encontrado
-           
-           REGRA 3 - Responsabilidade do TOMADOR:
-           Se indicar "Responsável pelo recolhimento: Tomador", "Substituição Tributária: Sim", "ISS retido pelo tomador":
-           - iss_retido = "sim"
-           - valor_iss_retido = null (se não houver valor explícito)
-           
-           REGRA 4 - Status jurídico vs matemático:
-           Se "ISS Retido: SIM" ou "Responsável: Tomador", MESMO QUE Valor ISS = 0.00:
-           - iss_retido = "sim"
-           - valor_iss_retido = 0.00
-           
-           REGRA 5 - Prestador Responsável:
-           Se "Responsável: Prestador", "ISS devido ao prestador", "ISS não retido":
-           - iss_retido = "não"
-           - valor_iss_retido = null
-           
-           REGRA 6 - ISS Destacado:
-           Campos como "Valor do ISS", "ISS devido", "ISS a recolher" NÃO implicam retenção.
-           Se não houver a palavra "retido" ou responsabilidade do tomador:
-           - iss_retido = "não"
-           
-           REGRA 7 - Hierarquia:
-           Em caso de conflito, campo explícito "ISS Retido: SIM/NÃO" vence qualquer outra regra.
-           
-           REGRA 8 - Default:
-           Se não houver evidência clara de retenção (sem "retido", sem "tomador"):
-           - iss_retido = "não"
-           - valor_iss_retido = null
+           ANALISE O DOCUMENTO BUSCANDO POR ESTES TERMOS EXATOS (Case Insensitive):
+
+           GRUPO 1 - RETENÇÃO CONFIRMADA (iss_retido = "sim"):
+           - "ISS RETIDO NA FONTE"
+           - "NATUREZA DA OPERACAO: TRIBUTCAO FORA DO MUNICIPIO"
+           - "ISS RETIDO PELO TOMADOR"
+           - "RECOLHIMENTO: ISS RETIDO NA FONTE PELO TOMADOR"
+           - "SUBSTITUTO TRIBUTARIO: SIM"
+           - "TIPO DE TRIBUTACAO: FORA DO MUNICIPIO"
+           - "TRIBUTADO FORA DO MUNICIPIO"
+           - "RESPONSÁVEL PELO RECOLHIMENTO: TOMADOR"
+           - "O ISS DESTA NFSE É DEVIDO FORA DO MUNICIPIO"
+           - "O ISS DESTA NFSE SERÁ RETIDO PELO TOMADOR DE SERVIÇO"
+           - "SITUACAO DE TRIBUTACAO RETIDO NO TOMADOR"
+           - "SIT. TRIB = TIST" ou "SIT. TRIB = TIRF"
+           - Se houver valor explícito (ex: "Valor ISS Retido: R$ 50,00"), extraia para valor_iss_retido.
+
+           GRUPO 2 - SEM RETENÇÃO (iss_retido = "não"):
+           - "NATUREZA DA OPERAÇÃO TRIBUTAÇÃO NO MUNICÍPIO"
+           - "SUBSTITUTO TRIBUTARIO: NÃO"
+           - "RECOLHIMENTO : SEM RETENÇÃO"
+           - "RESPONSÁVEL RECOLHIMENTO: PRESTADOR"
+           - "NA AUSÊNCIA DE PROVAS EM CONTRÁRIO, NÃO RETEM"
+           - "ISS ISENÇÃO"
+           - "NÃO SUJEITO A RETENÇÃO NA FONTE"
+           - "ISS SEM RETENÇÃO"
+           - "SIT. TRIB = TI"
+           - "SITUACAO: NÃO TRIBUTADA"
+
+           REGRA DE CONFLITO:
+           Se houver termos conflitantes, dê preferência aos termos do GRUPO 1.
+           Se não encontrar nenhum termo específico, assuma "não".
            - valor_pis: Valor do PIS (Retenção Federal).
            - valor_cofins: Valor da COFINS (Retenção Federal).
            - valor_inss: Valor do INSS (Retenção Federal).

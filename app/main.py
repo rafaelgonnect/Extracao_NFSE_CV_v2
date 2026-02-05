@@ -506,6 +506,89 @@ async def dashboard_logs(
         "total_pages": (total_logs + limit - 1) // limit
     }
 
+@app.get("/api/stats/ranking")
+async def stats_ranking(username: str = Depends(get_current_username)):
+    logs_collection = await get_logs_collection()
+
+    # Filtro Base: Endpoints válidos e payload existente
+    match_stage = {
+        "$match": {
+            "endpoint": {"$in": ["/extract", "/api/extractData2"]},
+            "response_payload": {"$exists": True, "$ne": None}
+        }
+    }
+
+    # 1. KPIs Globais
+    kpi_pipeline = [
+        match_stage,
+        {
+            "$group": {
+                "_id": None,
+                "total_notes": {"$sum": 1},
+                "total_value": {"$sum": "$response_payload.valor_total"},
+            }
+        }
+    ]
+    kpi_result = await logs_collection.aggregate(kpi_pipeline).to_list(length=1)
+    kpis = kpi_result[0] if kpi_result else {"total_notes": 0, "total_value": 0.0}
+    kpis["avg_ticket"] = kpis["total_value"] / kpis["total_notes"] if kpis["total_notes"] > 0 else 0.0
+
+    # 2. Ranking Prestadores (Top 10 por Valor)
+    providers_pipeline = [
+        match_stage,
+        {
+            "$group": {
+                "_id": "$response_payload.prestador_razao_social",
+                "total_value": {"$sum": "$response_payload.valor_total"}
+            }
+        },
+        {"$sort": {"total_value": -1}},
+        {"$limit": 10}
+    ]
+    providers = await logs_collection.aggregate(providers_pipeline).to_list(length=10)
+
+    # 3. Ranking Tomadores (Top 10 por Valor)
+    takers_pipeline = [
+        match_stage,
+        {
+            "$group": {
+                "_id": "$response_payload.tomador_razao_social",
+                "total_value": {"$sum": "$response_payload.valor_total"}
+            }
+        },
+        {"$sort": {"total_value": -1}},
+        {"$limit": 10}
+    ]
+    takers = await logs_collection.aggregate(takers_pipeline).to_list(length=10)
+
+    # 4. Timeline (Volume Diário)
+    # Ajuste para timezone -3 (Brasília)
+    timeline_pipeline = [
+        match_stage,
+        {
+            "$group": {
+                "_id": {
+                    "$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp", "timezone": "-03:00"}
+                },
+                "count": {"$sum": 1}
+            }
+        },
+        {"$sort": {"_id": 1}}
+    ]
+    timeline = await logs_collection.aggregate(timeline_pipeline).to_list(length=30)
+
+    return {
+        "kpis": kpis,
+        "providers": providers,
+        "takers": takers,
+        "timeline": timeline
+    }
+
+@app.get("/dashboard/ranking", response_class=HTMLResponse)
+async def dashboard_ranking(username: str = Depends(get_current_username)):
+    with open("app/templates/ranking.html", "r", encoding="utf-8") as f:
+        return f.read()
+
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(username: str = Depends(get_current_username)):
     with open("app/templates/dashboard.html", "r", encoding="utf-8") as f:

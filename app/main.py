@@ -261,13 +261,23 @@ async def extract_nfse_legacy(request: LegacyRequest):
         
         # Normalização ISS Retido (S/N)
         iss_retido_norm = "N"
-        if data.iss_retido:
-            if data.iss_retido.upper() in ["SIM", "S", "YES"]:
+        raw_iss = data.iss_retido
+        
+        if raw_iss:
+            # Remover acentos e espaços de forma manual e segura
+            normalized_str = raw_iss.upper().strip().replace("Ã", "A").replace("Õ", "O").replace("Á", "A").replace("É", "E").replace("Í", "I").replace("Ó", "O").replace("Ú", "U").replace("Ç", "C")
+            
+            logger.info(f"Normalizando ISS Retido: Original='{raw_iss}' -> Norm='{normalized_str}'")
+            
+            if normalized_str in ["SIM", "S", "YES"]:
                 iss_retido_norm = "S"
-            elif data.iss_retido.upper() in ["NÃO", "NAO", "N", "NO"]:
+            elif normalized_str in ["NAO", "N", "NO"]:
                 iss_retido_norm = "N"
             else:
+                logger.warning(f"Valor de ISS Retido não reconhecido na normalização: '{raw_iss}'. Usando default 'N'.")
                 iss_retido_norm = "N" # Default seguro
+        else:
+             logger.info("ISS Retido veio nulo ou vazio. Usando default 'N'.")
                 
         add_pred("ISS_Retido", iss_retido_norm)
         add_pred("Valor_ISS_Retido", data.valor_iss_retido, "0.00")

@@ -34,8 +34,7 @@ class NFSeData(BaseModel):
     valor_iss: Optional[float] = None
     aliquota_iss: Optional[float] = None
     base_calculo: Optional[float] = None
-    iss_retido: Optional[str] = Field(None, description="Indicador de retenção de ISS: 'S' (Sim) ou 'N' (Não)")
-    valor_iss_retido: Optional[float] = Field(None, description="Valor monetário do ISS retido na fonte")
+    iss_retido: Optional[str] = Field(None, description="Indicador de retenção de ISS: 'Sim' ou 'Não'")
     valor_liquido: Optional[float] = None
     
     # Retenções Federais

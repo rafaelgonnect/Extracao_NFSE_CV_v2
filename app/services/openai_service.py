@@ -137,14 +137,13 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
            - valor_iss: Valor monetário do Imposto Sobre Serviços (ISS).
            - aliquota_iss: Percentual do ISS aplicado (ex: 5.0, 2.0). Se estiver em %, converta para decimal simples (ex: "5%" -> 5.00).
            
-           - iss_retido: "S" ou "N".
-           - valor_iss_retido: valor numérico ou null.
+           - iss_retido: "Sim" ou "Não".
            
            REGRAS OBRIGATÓRIAS PARA ISS RETIDO (SIGA A HIERARQUIA):
            
            ANALISE O DOCUMENTO BUSCANDO POR ESTES TERMOS EXATOS (Case Insensitive):
 
-           GRUPO 1 - RETENÇÃO CONFIRMADA (iss_retido = "S"):
+           GRUPO 1 - RETENÇÃO CONFIRMADA (iss_retido = "Sim"):
            - "ISS RETIDO NA FONTE"
            - "NATUREZA DA OPERACAO: TRIBUTCAO FORA DO MUNICIPIO"
            - "ISS RETIDO PELO TOMADOR"
@@ -157,9 +156,8 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
            - "O ISS DESTA NFSE SERÁ RETIDO PELO TOMADOR DE SERVIÇO"
            - "SITUACAO DE TRIBUTACAO RETIDO NO TOMADOR"
            - "SIT. TRIB = TIST" ou "SIT. TRIB = TIRF"
-           - Se houver valor explícito (ex: "Valor ISS Retido: R$ 50,00"), extraia para valor_iss_retido.
 
-           GRUPO 2 - SEM RETENÇÃO (iss_retido = "N"):
+           GRUPO 2 - SEM RETENÇÃO (iss_retido = "Não"):
            - "NATUREZA DA OPERAÇÃO TRIBUTAÇÃO NO MUNICÍPIO"
            - "SUBSTITUTO TRIBUTARIO: NÃO"
            - "RECOLHIMENTO : SEM RETENÇÃO"
@@ -173,7 +171,7 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
 
            REGRA DE CONFLITO:
            Se houver termos conflitantes, dê preferência aos termos do GRUPO 1.
-           Se não encontrar nenhum termo específico, assuma "N".
+           Se não encontrar nenhum termo específico, assuma "Não".
            - valor_pis: Valor do PIS (Retenção Federal).
            - valor_cofins: Valor da COFINS (Retenção Federal).
            - valor_inss: Valor do INSS (Retenção Federal).

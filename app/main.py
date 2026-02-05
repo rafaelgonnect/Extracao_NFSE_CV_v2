@@ -258,6 +258,8 @@ async def extract_nfse_legacy(request: LegacyRequest):
         # Novos Campos
         add_pred("IBS", data.ibs, "0.00")
         add_pred("CBS", data.cbs)
+        add_pred("ISS_Retido", data.iss_retido)
+        add_pred("Valor_ISS_Retido", data.valor_iss_retido, "0.00")
         
         # Valor Líquido - Formatação BRL 9.999,99
         val_liq = data.valor_liquido
@@ -265,6 +267,12 @@ async def extract_nfse_legacy(request: LegacyRequest):
              # Regra básica se nulo: Total - Retenções
              # Assumindo 0 se retenções nulas
              retencoes = (data.valor_pis or 0) + (data.valor_cofins or 0) + (data.valor_inss or 0) + (data.valor_ir or 0) + (data.valor_csll or 0)
+             
+             # Regra Contábil ISS Retido: Se "sim", deduzir do líquido
+             if data.iss_retido and data.iss_retido.lower() == "sim":
+                 iss_deduction = data.valor_iss_retido if data.valor_iss_retido is not None else (data.valor_iss or 0)
+                 retencoes += iss_deduction
+                 
              val_liq = data.valor_total - retencoes
         
         val_liq_str = "0,00"

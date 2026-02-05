@@ -12,8 +12,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .sidebar { height: 100vh; position: fixed; top: 0; left: 0; padding: 20px; background: #2c3e50; color: white; width: 250px; z-index: 1000; }
-        .main-content { margin-left: 250px; padding: 30px; }
+        .main-content { padding: 30px; max-width: 1400px; margin: 0 auto; }
         .stat-card { border: none; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: transform 0.2s; }
         .stat-card:hover { transform: translateY(-5px); }
         .icon-box { width: 50px; height: 50px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 24px; color: white; }
@@ -33,29 +32,16 @@
 </head>
 <body>
 
-    <!-- Sidebar -->
-    <div class="sidebar d-flex flex-column">
-        <h3 class="mb-4 text-center"><i class="fas fa-robot me-2"></i>NFSe AI</h3>
-        <ul class="nav flex-column">
-            <li class="nav-item mb-2">
-                <a href="#" class="nav-link text-white active"><i class="fas fa-chart-line me-2"></i>Dashboard</a>
-            </li>
-            <li class="nav-item mb-2">
-                <a href="#" class="nav-link text-white-50"><i class="fas fa-file-invoice me-2"></i>Relatórios</a>
-            </li>
-            <li class="nav-item mb-2">
-                <a href="#" class="nav-link text-white-50"><i class="fas fa-cog me-2"></i>Configurações</a>
-            </li>
-        </ul>
-        <div class="mt-auto text-center text-white-50">
-            <small>v1.2.0 Stable</small>
-        </div>
-    </div>
-
     <!-- Main Content -->
     <div class="main-content">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2>Dashboard Analítico</h2>
+        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+            <div class="d-flex align-items-center">
+                <i class="fas fa-robot fa-2x text-primary me-3"></i>
+                <div>
+                    <h2 class="mb-0">Dashboard Analítico</h2>
+                    <small class="text-muted">v1.3.0 Client View</small>
+                </div>
+            </div>
             <div>
                 <button class="btn btn-outline-primary me-2" onclick="loadData()"><i class="fas fa-sync-alt"></i> Atualizar</button>
                 <button class="btn btn-success" onclick="exportCSV()"><i class="fas fa-file-csv"></i> Exportar CSV</button>
@@ -84,9 +70,8 @@
                     <div class="card-body">
                         <div class="row no-gutters align-items-center">
                             <div class="col mr-2">
-                                <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Receita Gerada</div>
-                                <div class="h5 mb-0 font-weight-bold text-gray-800" id="stat-revenue">...</div>
-                                <small class="text-muted">Custo Prov.: <span id="stat-cost">...</span></small>
+                                <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Custo Total (USD)</div>
+                                <div class="h5 mb-0 font-weight-bold text-gray-800" id="stat-cost-usd">...</div>
                             </div>
                             <div class="col-auto">
                                 <div class="icon-box bg-gradient-success"><i class="fas fa-dollar-sign"></i></div>
@@ -152,25 +137,37 @@
         </div>
 
         <!-- Filters -->
-        <div class="filter-bar row g-3 align-items-end">
-            <div class="col-md-3">
-                <label class="form-label">Data Início</label>
-                <input type="date" class="form-control" id="filter-start">
+        <div class="filter-bar">
+            <!-- Search Bar -->
+            <div class="row mb-3">
+                <div class="col-12">
+                    <div class="input-group">
+                        <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted"></i></span>
+                        <input type="text" class="form-control border-start-0 ps-0" id="global-search" placeholder="Pesquisar por ID, Prestador, Endpoint, Modelo..." onkeyup="debounceSearch()">
+                    </div>
+                </div>
             </div>
-            <div class="col-md-3">
-                <label class="form-label">Data Fim</label>
-                <input type="date" class="form-control" id="filter-end">
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">Status</label>
-                <select class="form-select" id="filter-status">
-                    <option value="">Todos</option>
-                    <option value="success">Sucesso</option>
-                    <option value="error">Erro</option>
-                </select>
-            </div>
-            <div class="col-md-3">
-                <button class="btn btn-primary w-100" onclick="applyFilters()"><i class="fas fa-filter"></i> Filtrar</button>
+            
+            <div class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">Data Início</label>
+                    <input type="date" class="form-control" id="filter-start">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Data Fim</label>
+                    <input type="date" class="form-control" id="filter-end">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Status</label>
+                    <select class="form-select" id="filter-status">
+                        <option value="">Todos</option>
+                        <option value="success">Sucesso</option>
+                        <option value="error">Erro</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button class="btn btn-primary w-100" onclick="applyFilters()"><i class="fas fa-filter"></i> Filtrar</button>
+                </div>
             </div>
         </div>
 
@@ -195,28 +192,17 @@
         let logsData = [];
         let volumeChartInstance = null;
         let statusChartInstance = null;
+        let searchTimeout = null;
 
         async function loadStats() {
             try {
                 const response = await fetch('/api/dashboard/stats');
                 const data = await response.json();
                 
-                // Check for Special Access
-                const urlParams = new URLSearchParams(window.location.search);
-                const isRootRafa = urlParams.get('rootrafa') === 'true';
-
                 document.getElementById('stat-requests').innerText = data.total_requests;
-                document.getElementById('stat-revenue').innerText = 'R$ ' + data.total_revenue.toFixed(2);
+                // Exibir Custo Total em USD (Consolidado)
+                document.getElementById('stat-cost-usd').innerText = '$ ' + data.total_cost_usd.toFixed(4);
                 
-                const costElement = document.getElementById('stat-cost');
-                if (isRootRafa) {
-                    costElement.innerText = 'R$ ' + data.total_provider_cost.toFixed(2);
-                    costElement.parentElement.style.display = 'inline'; // Ensure visible
-                } else {
-                    // Hide provider cost for non-root users
-                    costElement.parentElement.style.display = 'none';
-                }
-
                 document.getElementById('stat-confidence').innerText = (data.avg_confidence * 100).toFixed(1) + '%';
                 document.getElementById('stat-tokens').innerText = data.total_tokens.toLocaleString();
 
@@ -232,11 +218,13 @@
             const status = document.getElementById('filter-status').value;
             const start = document.getElementById('filter-start').value;
             const end = document.getElementById('filter-end').value;
+            const search = document.getElementById('global-search').value;
 
             let url = `/api/dashboard/logs?page=${page}&limit=10`;
             if (status) url += `&status=${status}`;
             if (start) url += `&start_date=${start}`;
             if (end) url += `&end_date=${end}`;
+            if (search) url += `&search=${encodeURIComponent(search)}`;
 
             try {
                 const response = await fetch(url);
@@ -249,14 +237,17 @@
             }
         }
 
+        function debounceSearch() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                loadLogs(1);
+            }, 500);
+        }
+
         function renderLogs(logs) {
             const container = document.getElementById('logs-container');
             container.innerHTML = '';
             
-            // Check for Special Access
-            const urlParams = new URLSearchParams(window.location.search);
-            const isRootRafa = urlParams.get('rootrafa') === 'true';
-
             if (logs.length === 0) {
                 container.innerHTML = '<div class="alert alert-info text-center">Nenhum registro encontrado.</div>';
                 return;
@@ -287,35 +278,9 @@
 
                 const valor = extractedData.valor_total ? `R$ ${extractedData.valor_total.toFixed(2)}` : "R$ 0.00";
                 
-                // Cost Logic
-                let displayProviderCost = 0.0;
-                let displayMarkup = 0.0;
-                let displayFinalPrice = 0.0;
-                
-                if (isRootRafa) {
-                    // Root View: Show pure cost, no markup (or hidden markup as 0), pure cost as final
-                    displayProviderCost = log.pure_cost_brl || 0.0;
-                    displayMarkup = 0.0;
-                    displayFinalPrice = log.pure_cost_brl || 0.0;
-                } else {
-                    // Standard View: 
-                    // Se for log antigo (tem markup_fee > 0), somamos ao provider_cost para esconder o markup visualmente.
-                    // Se for log novo (markup_fee = 0), provider_cost já é o total.
-                    const rawMarkup = log.markup_fee || 0.0;
-                    const rawProvider = log.provider_cost || 0.0;
-                    
-                    if (rawMarkup > 0 && log.final_price) {
-                         // Log antigo: Provider Cost Visual = Final Price
-                         displayProviderCost = log.final_price;
-                         displayMarkup = 0.0;
-                         displayFinalPrice = log.final_price;
-                    } else {
-                         // Log novo ou sem markup
-                         displayProviderCost = rawProvider;
-                         displayMarkup = 0.0; // Força visualização 0
-                         displayFinalPrice = log.final_price || 0.0;
-                    }
-                }
+                // Cost Logic (USD Only)
+                // Backend returns cost_usd which is (final_price_brl / 5.5)
+                const costUsd = log.cost_usd || 0.0;
 
                 // Processing Time
                 let procTime = '<span class="text-muted fst-italic" title="Dado não coletado em versões anteriores">Não disp. (Legado)</span>';
@@ -325,13 +290,13 @@
 
                 card.innerHTML = `
                     <div class="log-header" onclick="toggleDetails(${index})">
-                        <div class="d-flex align-items-center gap-3 flex-grow-1">
+                        <div class="d-flex align-items-center gap-3 flex-grow-1 flex-wrap">
                             <div class="fw-bold text-muted" style="min-width: 140px;">${new Date(log.timestamp).toLocaleString()}</div>
                             <div style="min-width: 80px;">${statusBadge}</div>
-                            <div class="fw-bold text-dark flex-grow-1">${log.endpoint} <span class="text-muted fw-normal ms-2">| ${prestador}</span></div>
+                            <div class="fw-bold text-dark flex-grow-1 text-break">${log.endpoint} <span class="text-muted fw-normal ms-2">| ${prestador}</span></div>
                             <div class="text-end" style="min-width: 120px;">
                                 <div class="fw-bold text-success">${valor}</div>
-                                <small class="text-muted">Custo: R$ ${displayFinalPrice.toFixed(4)}</small>
+                                <small class="text-muted">Custo: $${costUsd.toFixed(4)}</small>
                             </div>
                             <i class="fas fa-chevron-down text-muted transition-icon" id="icon-${index}"></i>
                         </div>
@@ -346,11 +311,9 @@
                                     <li class="list-group-item d-flex justify-content-between"><span>Tokens (In/Out):</span> <span>${log.input_tokens} / ${log.output_tokens}</span></li>
                                     <li class="list-group-item d-flex justify-content-between"><span>Tempo Proc.:</span> <span>${procTime}</span></li>
                                 </ul>
-                                <h6 class="text-danger fw-bold mb-2">Auditoria de Custo ${isRootRafa ? '(ROOT VIEW)' : ''}</h6>
+                                <h6 class="text-success fw-bold mb-2">Custo de Processamento</h6>
                                 <div class="alert alert-light border small">
-                                    <div>Custo Provider: <strong>R$ ${displayProviderCost.toFixed(5)}</strong></div>
-                                    <div>Markup Aplicado: <strong>R$ ${displayMarkup.toFixed(5)}</strong></div>
-                                    <div class="border-top mt-1 pt-1">Preço Final: <strong class="text-success">R$ ${displayFinalPrice.toFixed(5)}</strong></div>
+                                    <div>Custo Total: <strong>$${costUsd.toFixed(5)}</strong></div>
                                 </div>
                             </div>
                             <div class="col-md-6">
@@ -415,9 +378,9 @@
 
         function exportCSV() {
             // Implementação simples de exportação dos dados visíveis ou fetch de todos
-            let csvContent = "data:text/csv;charset=utf-8,Timestamp,Endpoint,Status,Custo,Modelo\n";
+            let csvContent = "data:text/csv;charset=utf-8,Timestamp,Endpoint,Status,Custo(USD),Modelo\n";
             logsData.forEach(log => {
-                csvContent += `${log.timestamp},${log.endpoint},${log.status_code},${log.final_price},${log.model}\n`;
+                csvContent += `${log.timestamp},${log.endpoint},${log.status_code},${log.cost_usd},${log.model}\n`;
             });
             const encodedUri = encodeURI(csvContent);
             const link = document.createElement("a");

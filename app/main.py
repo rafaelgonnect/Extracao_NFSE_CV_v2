@@ -324,9 +324,8 @@ async def dashboard_stats(username: str = Depends(get_current_username)):
                 "total_requests": {"$sum": 1},
                 "total_input_tokens": {"$sum": "$input_tokens"},
                 "total_output_tokens": {"$sum": "$output_tokens"},
-                "total_provider_cost": {"$sum": "$provider_cost"},
-                "total_revenue": {"$sum": "$final_price"},
-                "avg_confidence": {"$avg": 1.0} # Placeholder, idealmente viria dos logs
+                "total_provider_cost_brl": {"$sum": "$provider_cost"}, # Currently stored in BRL
+                "avg_confidence": {"$avg": 1.0} # Placeholder
             }
         }
     ]
@@ -359,24 +358,26 @@ async def dashboard_stats(username: str = Depends(get_current_username)):
             daily_counts[d_str] = item["count"]
             
     daily_volume = list(daily_counts.values())
-    # Format labels: "Seg", "Ter", etc.
     days_pt = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom"]
     daily_labels = [days_pt[d.weekday()] for d in dates]
     
     result = {
-        "total_requests": 0, "total_tokens": 0, "total_provider_cost": 0.0, "total_revenue": 0.0, "avg_confidence": 0.0,
+        "total_requests": 0, "total_tokens": 0, "total_cost_usd": 0.0, "avg_confidence": 0.0,
         "daily_volume": daily_volume,
         "daily_labels": daily_labels
     }
     
     if stats:
         s = stats[0]
+        # Convert BRL to USD (Fixed Rate 5.5)
+        total_brl = s.get("total_provider_cost_brl", 0.0)
+        total_usd = total_brl / 5.5
+        
         result.update({
             "total_requests": s.get("total_requests", 0),
             "total_tokens": s.get("total_input_tokens", 0) + s.get("total_output_tokens", 0),
-            "total_provider_cost": s.get("total_provider_cost", 0.0),
-            "total_revenue": s.get("total_revenue", 0.0),
-            "avg_confidence": 0.98 # Simulado por enquanto
+            "total_cost_usd": total_usd,
+            "avg_confidence": 0.98
         })
         
     return result
@@ -388,6 +389,7 @@ async def dashboard_logs(
     status: str = None, 
     start_date: str = None, 
     end_date: str = None,
+    search: str = None,
     username: str = Depends(get_current_username)
 ):
     logs_collection = await get_logs_collection()
@@ -407,15 +409,31 @@ async def dashboard_logs(
         except:
             pass
 
+    if search:
+        # Busca global (Case insensitive)
+        regex = {"$regex": search, "$options": "i"}
+        query["$or"] = [
+            {"request_id": regex},
+            {"endpoint": regex},
+            {"model": regex},
+            {"response_payload.prestador_razao_social": regex},
+            {"response_payload.prestador_cnpj": regex},
+            {"response_payload.Result.0.Prediction.OCR_Text": regex} # Tentativa de buscar em campos legados
+        ]
+
     total_logs = await logs_collection.count_documents(query)
     cursor = logs_collection.find(query).sort("timestamp", -1).skip((page - 1) * limit).limit(limit)
     logs = await cursor.to_list(length=limit)
     
-    # Converter ObjectId e datetime para JSON
     serialized_logs = []
     for log in logs:
         log["_id"] = str(log["_id"])
         log["timestamp"] = log["timestamp"].isoformat()
+        
+        # Converter BRL para USD para exibição
+        final_price_brl = log.get("final_price", 0.0)
+        log["cost_usd"] = final_price_brl / 5.5
+        
         serialized_logs.append(log)
         
     return {

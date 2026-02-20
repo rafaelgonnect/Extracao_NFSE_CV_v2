@@ -151,8 +151,15 @@ async def analyze_contract_file(request: ContractRequest, background_tasks: Back
 
         data = json.loads(response_text)
 
-        # 4. Transform to Legacy Format
-        legacy_output = transform_to_legacy(data)
+        # 4. Transform to legacy envelope format expected by client
+        legacy_prediction = transform_to_legacy(data)
+        legacy_output = {
+            "Result": [
+                {
+                    "Prediction": legacy_prediction
+                }
+            ]
+        }
         
         # Cleanup
         try:

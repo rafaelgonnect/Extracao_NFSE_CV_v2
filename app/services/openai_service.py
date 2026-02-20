@@ -5,17 +5,20 @@ import hashlib
 import logging
 import time
 import asyncio
-import fitz  # PyMuPDF
-from PIL import Image, ImageEnhance
-from io import BytesIO
 from typing import List
 from openai import AsyncOpenAI
 from app.models.schemas import NFSeData
 from dotenv import load_dotenv
 
 load_dotenv()
+_client = None
 
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+def get_client():
+    global _client
+    if _client is None:
+        _client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    return _client
+
 logger = logging.getLogger(__name__)
 
 # Simple in-memory cache
@@ -45,47 +48,6 @@ def add_additional_properties_false(schema):
 def get_pdf_hash(pdf_content: bytes) -> str:
     return hashlib.md5(pdf_content).hexdigest()
 
-def process_pdf_to_enhanced_image(pdf_content: bytes) -> str:
-    """Converte a primeira página do PDF em uma imagem de alta resolução e aplica melhorias para OCR."""
-    try:
-        conv_start = time.time()
-        # 1. Abrir PDF com alta resolução (DPI 216+)
-        # Reduzimos o zoom de 4.0 para 3.0 para economizar memória e CPU em alta concorrência,
-        # mantendo precisão suficiente para OCR de notas fiscais.
-        doc = fitz.open(stream=pdf_content, filetype="pdf")
-        if doc.page_count == 0:
-            raise ValueError("O PDF não contém páginas.")
-        
-        page = doc.load_page(0)
-        
-        zoom = 3.0 
-        mat = fitz.Matrix(zoom, zoom)
-        pix = page.get_pixmap(matrix=mat)
-        
-        # 2. Carregar no Pillow para processamento de imagem
-        img = Image.open(BytesIO(pix.tobytes("png")))
-        
-        # Converter para escala de cinza
-        img = img.convert("L")
-        
-        # Aumentar o contraste (otimizado)
-        enhancer = ImageEnhance.Contrast(img)
-        img = enhancer.enhance(1.5) # Reduzido levemente para evitar artefatos
-        
-        # 3. Converter de volta para Base64 (JPEG com compressão balanceada)
-        buffered = BytesIO()
-        img.save(buffered, format="JPEG", quality=85, optimize=True)
-        img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-        
-        doc.close()
-        conv_time = time.time() - conv_start
-        logger.info(f"Conversão PDF->Imagem concluída em {conv_time:.2f}s (Zoom: {zoom})")
-        return img_base64
-        
-    except Exception as e:
-        logger.error(f"Erro no processamento de imagem do PDF: {str(e)}", exc_info=True)
-        raise ValueError(f"Falha ao processar imagem para OCR: {str(e)}")
-
 async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
     start_time = time.time()
     pdf_hash = get_pdf_hash(pdf_content)
@@ -96,13 +58,21 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
 
     # Usando o semáforo para controlar a carga pesada simultânea no servidor
     async with heavy_task_semaphore:
-        logger.debug(f"Cache MISS para PDF (hash: {pdf_hash}). Processando imagem aprimorada...")
+        logger.debug(f"Cache MISS para PDF (hash: {pdf_hash}). Preparando entrada nativa de documento...")
 
-        # 1. Converter PDF para Imagem Aprimorada
-        image_base64 = process_pdf_to_enhanced_image(pdf_content)
+        # 1. Upload do arquivo para a OpenAI com propósito 'assistants'
+        logger.info(f"Fazendo upload do PDF para OpenAI (purpuse='assistants')...")
+        client = get_client()
+        
+        # O modelo Responses API exige que o arquivo seja pré-carregado
+        file_obj = await client.files.create(
+            file=("nota_fiscal.pdf", pdf_content),
+            purpose="assistants"
+        )
+        logger.info(f"Arquivo carregado com ID: {file_obj.id}")
 
-        # 2. Montar o prompt e chamar OpenAI
-        logger.info(f"Chamando API da OpenAI com Imagem Aprimorada (Modelo: gpt-5-nano-2025-08-07)... ")
+        # 2. Montar o prompt e chamar OpenAI Responses API
+        logger.info(f"Chamando API de Responses com PDF (Modelo: gpt-5-nano-2025-08-07)...")
         ai_start = time.time()
         
         # Gerar JSON Schema a partir do modelo Pydantic para garantir extração perfeita
@@ -111,7 +81,7 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
         
         system_prompt = f"""
         Você é um assistente especializado em extração de dados de Notas Fiscais de Serviço Eletrônicas (NFS-e) brasileiras, capaz de interpretar layouts variados de diferentes prefeituras (padrão ABRASF, Ginfes, Betha, DSf, etc.).
-        Sua tarefa é analisar a imagem e extrair os dados para o schema JSON fornecido com extrema precisão técnica.
+        Sua tarefa é analisar o documento PDF completo e extrair os dados para o schema JSON fornecido com extrema precisão técnica.
 
         DIRETRIZES TÉCNICAS DE EXTRAÇÃO POR CAMPO (NÃO ALTERE OS NOMES DAS CHAVES DO JSON):
 
@@ -185,58 +155,58 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
            - base_calculo: Base de Cálculo do ISS. Se não estiver explícito, geralmente é igual ao Valor dos Serviços.
 
         Você DEVE seguir rigorosamente este schema JSON para a saída:
-        {{json.dumps(json_schema, indent=2)}}
+        {json.dumps(json_schema, indent=2)}
         
         Instruções de Validação Final:
         1. Campos não encontrados devem ser null.
         2. Dê prioridade máxima para encontrar o CÓDIGO DE VERIFICAÇÃO / CHAVE DE ACESSO correto, independente da nomenclatura usada pela prefeitura.
         3. Evite confundir CNPJ do Tomador com CNPJ do Prestador (verifique os rótulos dos quadros).
-        4. Ignore carimbos ou assinaturas que sobreponham o texto.
+        4. Analise todas as páginas do documento se houver mais de uma.
         """
 
-        user_prompt = "Analise esta imagem de NFS-e e extraia os dados conforme o schema, focando na precisão do Número e Código de Verificação."
+        user_prompt = "Analise este PDF de NFS-e e extraia os dados conforme o schema, focando na precisão do Número e Código de Verificação."
 
-        # Configurações comuns
-        model_params = {
-            "messages": [
-                {"role": "system", "content": system_prompt},
+        # Configurações para entrada nativa via Responses API
+        response_params = {
+            "model": "gpt-5-nano-2025-08-07",
+            "input": [
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": user_prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_base64}",
-                                "detail": "high"
-                            }
-                        },
+                        {"type": "input_text", "text": user_prompt},
+                        {"type": "input_file", "file_id": file_obj.id}
                     ],
                 },
             ],
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "nfse_extraction",
-                    "schema": json_schema,
-                    "strict": True
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "nfse_extraction",
+                        "schema": json_schema,
+                        "strict": True
+                    }
                 }
             }
         }
 
         try:
-            # Chamada com o modelo gpt-5-nano
-            response = await client.chat.completions.create(
-                model="gpt-5-nano-2025-08-07",
-                **model_params
+            # Chamada com o modelo gpt-5-nano via Responses API (Beta)
+            response = await client.responses.create(
+                **response_params
             )
         except Exception as e:
             logger.warning(f"Erro na primeira tentativa com gpt-5-nano, tentando novamente... Erro: {str(e)}")
-            # Tentativa de reprocessamento com o mesmo modelo gpt-5-nano
-            response = await client.chat.completions.create(
-                model="gpt-5-nano-2025-08-07",
-                **model_params
+            # Tentativa de reprocessamento
+            response = await client.responses.create(
+                **response_params
             )
+        finally:
+            # Limpar o arquivo após o uso
+            try:
+                await client.files.delete(file_obj.id)
+            except Exception as e:
+                logger.error(f"Erro ao deletar arquivo {file_obj.id}: {str(e)}")
 
         ai_time = time.time() - ai_start
         logger.info(f"Resposta da OpenAI recebida em {ai_time:.2f}s")
@@ -256,8 +226,39 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
         )
 
         # 4. Parsear e Cache
-        content = response.choices[0].message.content
-        logger.debug(f"Conteúdo bruto recebido da IA: {content}")
+        # DEBUG: Imprimir o objeto de resposta completo para inspeção
+        logger.info(f"DEBUG RAW RESPONSE: {response}")
+
+        # Busca robusta pelo conteúdo de texto no objeto de resposta multimodal
+        try:
+            content = None
+            if hasattr(response, 'choices') and response.choices:
+                content = response.choices[0].message.content
+            elif hasattr(response, 'output') and response.output:
+                # Na Responses API, o output é uma lista. Procuramos o item do tipo 'message'
+                for item in response.output:
+                    if getattr(item, 'type', None) == 'message' and hasattr(item, 'content'):
+                        for part in item.content:
+                            if getattr(part, 'type', None) == 'output_text':
+                                content = part.text
+                                break
+                    if content: break
+                
+                # Fallback: Se não achou 'message', tenta o primeiro item que tenha conteúdo (caso de layouts diferentes)
+                if not content and len(response.output) > 0:
+                    for item in response.output:
+                        if hasattr(item, 'content') and item.content:
+                            content = getattr(item.content[0], 'text', None)
+                            if content: break
+            
+            if not content:
+                # Fallback final: tenta converter o objeto para string/dict
+                content = str(response)
+        except Exception as e:
+            logger.error(f"Erro ao acessar conteúdo da resposta: {str(e)}")
+            content = str(response)
+
+        logger.debug(f"Conteúdo bruto para parse: {content}")
         
         try:
             data_dict = json.loads(content)

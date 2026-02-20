@@ -475,15 +475,28 @@
                 // Formatar dados para exibição
                 const extractedData = log.response_payload || {};
                 
-                // Lógica aprimorada para obter o prestador (suporte a legado e novo)
+                // Lógica aprimorada para exibir Prestador (NFS-e) ou Número do Contrato
                 let prestador = "N/A";
-                if (extractedData.Result && extractedData.Result[0] && extractedData.Result[0].Prediction) {
-                    // Estrutura legado (/api/extractData2)
-                    const pred = extractedData.Result[0].Prediction.find(p => p.Label === "CNPJ_Prest" || p.Label === "Prestador");
-                    if (pred) prestador = pred.OCR_Text;
+                let tipoDocumento = "NFS-e";
+
+                if (log.endpoint.includes('contract')) {
+                    tipoDocumento = "Contrato";
+                    // Tentar pegar número do contrato
+                    if (extractedData.contract_number && extractedData.contract_number.OCR_Text) {
+                         prestador = "Contrato: " + extractedData.contract_number.OCR_Text;
+                    } else if (extractedData.contract_number && extractedData.contract_number.value) {
+                         prestador = "Contrato: " + extractedData.contract_number.value;
+                    } else {
+                        prestador = "Contrato (S/N)";
+                    }
                 } else {
-                    // Estrutura nova (/extract)
-                    prestador = extractedData.prestador_razao_social || extractedData.prestador_cnpj || "N/A";
+                    // Lógica existente para NFS-e
+                    if (extractedData.Result && extractedData.Result[0] && extractedData.Result[0].Prediction) {
+                        const pred = extractedData.Result[0].Prediction.find(p => p.Label === "CNPJ_Prest" || p.Label === "Prestador");
+                        if (pred) prestador = pred.OCR_Text;
+                    } else {
+                        prestador = extractedData.prestador_razao_social || extractedData.prestador_cnpj || "N/A";
+                    }
                 }
 
                 const valor = extractedData.valor_total ? `R$ ${extractedData.valor_total.toFixed(2)}` : "R$ 0.00";
@@ -552,7 +565,10 @@
                         <div class="d-flex align-items-center gap-3 flex-grow-1 flex-wrap">
                             <div class="fw-bold text-muted" style="min-width: 140px;">${new Date(log.timestamp).toLocaleString()}</div>
                             <div style="min-width: 80px;">${statusBadge}</div>
-                            <div class="fw-bold text-dark flex-grow-1 text-break">${log.endpoint} <span class="text-muted fw-normal ms-2">| ${prestador}</span></div>
+                            <div class="fw-bold text-dark flex-grow-1 text-break">
+                                ${log.endpoint} <span class="badge bg-light text-dark border ms-2">${tipoDocumento}</span>
+                                <span class="text-muted fw-normal ms-2">| ${prestador}</span>
+                            </div>
                             <div class="text-end" style="min-width: 120px;">
                                 <div class="fw-bold text-success">${valor}</div>
                                 ${costDisplayHtml}

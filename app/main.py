@@ -1,8 +1,10 @@
-print("--- INICIANDO CARGA DO MAIN.PY ---", flush=True)
+from dotenv import load_dotenv
+load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Request, Depends, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import HTMLResponse
+from app.utils.mongodb_logger import log_to_mongo
 from app.services.openai_service import extract_data_from_pdf
 from app.models.schemas import NFSeData, PDFRequest, LegacyRequest, LegacyResponse, LegacyResult, LegacyPredictionItem
 from app.utils.logging_config import setup_logging, request_id_ctx
@@ -23,14 +25,17 @@ from datetime import datetime, timedelta
 setup_logging()
 logger = logging.getLogger(__name__)
 
-# Carregar variáveis de ambiente
-load_dotenv()
+# Carregar variáveis de ambiente (Moved to top)
+
 
 app = FastAPI(
     title="API de Extração de NFS-e com Monitoramento",
     description="API para extração de dados de NFS-e com logs detalhados e métricas.",
     version="1.2.0"
 )
+
+from app.routers import contract
+app.include_router(contract.router)
 
 # Segurança
 security = HTTPBasic()
@@ -48,64 +53,12 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
 
 @app.on_event("startup")
 async def startup_db_client():
-    print("--- TENTANDO CONECTAR AO BANCO ---", flush=True)
-    try:
-        db.connect()
-        print("--- CONEXAO BANCO SUCESSO ---", flush=True)
-    except Exception as e:
-        print(f"--- ERRO CRITICO AO CONECTAR BANCO: {e} ---", flush=True)
-        # Não damos raise aqui para permitir que o app suba e possamos ver os logs,
-        # mas o endpoint de health/dashboard vai falhar se precisar do banco.
+    db.connect()
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
     db.close()
 
-async def log_to_mongo(endpoint: str, request_data: dict, response_data: dict, usage: dict = None, status_code: int = 200, error: str = None, processing_time: float = 0.0):
-    try:
-        logs_collection = await get_logs_collection()
-        
-        # Lógica de Custo e Conversão BRL (Taxa 5.5)
-        exchange_rate = 5.5
-        token_cost_usd = usage.get("total_cost", 0.0) if usage else 0.0
-        pure_cost_brl = token_cost_usd * exchange_rate
-        
-        # Add-ons (antigo markup, agora incorporado ao custo base)
-        add_on_usd = random.uniform(0.010, 0.013)
-        add_on_brl = add_on_usd * exchange_rate
-        
-        if usage:
-            # Armazenar custo base com adicionais já aplicados
-            provider_cost = pure_cost_brl + add_on_brl
-            markup_fee = 0.0
-            final_price = provider_cost
-        else:
-            provider_cost = 0.0
-            markup_fee = 0.0
-            final_price = 0.0
-            pure_cost_brl = 0.0
-        
-        log_entry = {
-            "timestamp": datetime.utcnow(),
-            "request_id": request_id_ctx.get(),
-            "endpoint": endpoint,
-            "status_code": status_code,
-            "model": usage.get("model") if usage else "unknown",
-            "input_tokens": usage.get("input_tokens", 0) if usage else 0,
-            "output_tokens": usage.get("output_tokens", 0) if usage else 0,
-            "processing_time": processing_time,
-            "provider_cost": provider_cost, # Base + Addons (BRL)
-            "markup_fee": markup_fee,       # Sempre 0
-            "final_price": final_price,     # Igual ao provider_cost
-            "pure_cost_brl": pure_cost_brl, # Custo puro para auditoria rootrafa
-            "error": error,
-            # Evitar salvar Base64 muito grande no log se não for estritamente necessário para debug
-            # "request_payload": str(request_data)[:500] + "..." if request_data else None, 
-            "response_payload": response_data
-        }
-        await logs_collection.insert_one(log_entry)
-    except Exception as e:
-        logger.error(f"Erro ao salvar log no MongoDB: {str(e)}")
 
 # Middleware para Request ID e Performance
 @app.middleware("http")
@@ -268,39 +221,13 @@ async def extract_nfse_legacy(request: LegacyRequest):
         add_pred("IBS", data.ibs, "0.00")
         add_pred("CBS", data.cbs)
         
-        # Normalização ISS Retido (Sim/Não)
-        iss_retido_norm = "Não"
-        raw_iss = data.iss_retido
-        
-        if raw_iss:
-            # Remover acentos e espaços de forma manual e segura
-            normalized_str = raw_iss.upper().strip().replace("Ã", "A").replace("Õ", "O").replace("Á", "A").replace("É", "E").replace("Í", "I").replace("Ó", "O").replace("Ú", "U").replace("Ç", "C")
-            
-            logger.info(f"Normalizando ISS Retido: Original='{raw_iss}' -> Norm='{normalized_str}'")
-            
-            if normalized_str in ["SIM", "S", "YES", "1"]:
-                iss_retido_norm = "Sim"
-            elif normalized_str in ["NAO", "N", "NO", "0"]:
-                iss_retido_norm = "Não"
-            else:
-                logger.warning(f"Valor de ISS Retido não reconhecido na normalização: '{raw_iss}'. Usando default 'Não'.")
-                iss_retido_norm = "Não" # Default seguro
-        else:
-            logger.info("ISS Retido veio nulo ou vazio. Usando default 'Não'.")
-                
-        add_pred("ISS_Retido", iss_retido_norm)
-        # Campo valor_iss_retido removido do schema
-        # add_pred("Valor_ISS_Retido", data.valor_iss_retido, "0.00")
-        
-        # Regra Contábil ISS Retido: Se "S", deduzir do líquido (caso fosse calcular, mas agora só serve para referência)
-        if data.iss_retido and data.iss_retido.upper() == "S":
-            pass # Lógica removida, mantendo bloco apenas para referência futura se necessário
-        
         # Valor Líquido - Formatação BRL 9.999,99
         val_liq = data.valor_liquido
-        if val_liq is None:
-             # Se a IA não extraiu o líquido, retornar 0.00
-             val_liq = 0.00
+        if val_liq is None and data.valor_total is not None:
+             # Regra básica se nulo: Total - Retenções
+             # Assumindo 0 se retenções nulas
+             retencoes = (data.valor_pis or 0) + (data.valor_cofins or 0) + (data.valor_inss or 0) + (data.valor_ir or 0) + (data.valor_csll or 0)
+             val_liq = data.valor_total - retencoes
         
         val_liq_str = "0,00"
         if val_liq is not None:
@@ -472,7 +399,10 @@ async def dashboard_logs(
             {"model": regex},
             {"response_payload.prestador_razao_social": regex},
             {"response_payload.prestador_cnpj": regex},
-            {"response_payload.Result.0.Prediction.OCR_Text": regex} # Tentativa de buscar em campos legados
+            {"response_payload.Result.0.Prediction.OCR_Text": regex}, # Tentativa de buscar em campos legados
+            # Campos de Contrato
+            {"response_payload.contract_number.value": regex},
+            {"response_payload.registration.number": regex}
         ]
 
     total_logs = await logs_collection.count_documents(query)
@@ -506,195 +436,6 @@ async def dashboard_logs(
         "total_pages": (total_logs + limit - 1) // limit
     }
 
-@app.get("/api/stats/ranking")
-async def stats_ranking(username: str = Depends(get_current_username)):
-    logs_collection = await get_logs_collection()
-
-    # Filtro Base
-    match_stage = {
-        "$match": {
-            "endpoint": {"$in": ["/extract", "/api/extractData2"]},
-            "response_payload": {"$exists": True, "$ne": None}
-        }
-    }
-
-    # Estágio de Normalização (Critical Fix for Legacy Data)
-    # Extrai valor_total, prestador e tomador de ambas as estruturas (nova e legada)
-    normalize_stage = {
-        "$addFields": {
-            # Tenta pegar da estrutura nova, se não existir, tenta da legada
-            "normalized_value": {
-                "$ifNull": [
-                    "$response_payload.valor_total", # Novo
-                    {
-                        "$let": {
-                            "vars": {
-                                "targetObj": {
-                                    "$arrayElemAt": [
-                                        {
-                                            "$filter": {
-                                                "input": { "$ifNull": ["$response_payload.Result.0.Prediction", []] },
-                                                "as": "item",
-                                                "cond": { "$eq": ["$$item.Label", "Valor_Total"] }
-                                            }
-                                        },
-                                        0
-                                    ]
-                                }
-                            },
-                            "in": "$$targetObj.OCR_Text"
-                        }
-                    }
-                ]
-            },
-            "normalized_provider": {
-                "$ifNull": [
-                    "$response_payload.prestador_razao_social", # Novo
-                    {
-                        "$let": {
-                            "vars": {
-                                "targetObj": {
-                                    "$arrayElemAt": [
-                                        {
-                                            "$filter": {
-                                                "input": { "$ifNull": ["$response_payload.Result.0.Prediction", []] },
-                                                "as": "item",
-                                                "cond": { "$in": ["$$item.Label", ["CNPJ_Prest", "Prestador"]] }
-                                            }
-                                        },
-                                        0
-                                    ]
-                                }
-                            },
-                            "in": "$$targetObj.OCR_Text"
-                        }
-                    }
-                ]
-            },
-            "normalized_taker": {
-                "$ifNull": [
-                    "$response_payload.tomador_razao_social", # Novo
-                    {
-                        "$let": {
-                            "vars": {
-                                "targetObj": {
-                                    "$arrayElemAt": [
-                                        {
-                                            "$filter": {
-                                                "input": { "$ifNull": ["$response_payload.Result.0.Prediction", []] },
-                                                "as": "item",
-                                                "cond": { "$in": ["$$item.Label", ["CNPJ_Tom", "Tomador"]] }
-                                            }
-                                        },
-                                        0
-                                    ]
-                                }
-                            },
-                            "in": "$$targetObj.OCR_Text"
-                        }
-                    }
-                ]
-            }
-        }
-    }
-
-    # Estágio de Conversão de Tipo (String -> Double)
-    # O valor legado vem como string "304.00". O novo vem como float.
-    convert_stage = {
-        "$addFields": {
-            "numeric_value": {
-                "$cond": {
-                    "if": { "$isNumber": "$normalized_value" },
-                    "then": "$normalized_value",
-                    "else": { "$toDouble": "$normalized_value" } # Tenta converter string para double
-                }
-            }
-        }
-    }
-
-    # 1. KPIs Globais
-    kpi_pipeline = [
-        match_stage,
-        normalize_stage,
-        convert_stage,
-        {
-            "$group": {
-                "_id": None,
-                "total_notes": {"$sum": 1},
-                "total_value": {"$sum": "$numeric_value"},
-            }
-        }
-    ]
-    
-    # Executa KPI com tratamento de erro silencioso para conversão
-    try:
-        kpi_result = await logs_collection.aggregate(kpi_pipeline).to_list(length=1)
-        kpis = kpi_result[0] if kpi_result else {"total_notes": 0, "total_value": 0.0}
-    except Exception as e:
-        logger.error(f"Erro na agregação de KPIs: {e}")
-        kpis = {"total_notes": 0, "total_value": 0.0}
-        
-    kpis["avg_ticket"] = kpis["total_value"] / kpis["total_notes"] if kpis["total_notes"] > 0 else 0.0
-
-    # 2. Ranking Prestadores (Top 10 por Valor)
-    providers_pipeline = [
-        match_stage,
-        normalize_stage,
-        convert_stage,
-        {
-            "$group": {
-                "_id": "$normalized_provider",
-                "total_value": {"$sum": "$numeric_value"}
-            }
-        },
-        {"$sort": {"total_value": -1}},
-        {"$limit": 10}
-    ]
-    providers = await logs_collection.aggregate(providers_pipeline).to_list(length=10)
-
-    # 3. Ranking Tomadores (Top 10 por Valor)
-    takers_pipeline = [
-        match_stage,
-        normalize_stage,
-        convert_stage,
-        {
-            "$group": {
-                "_id": "$normalized_taker",
-                "total_value": {"$sum": "$numeric_value"}
-            }
-        },
-        {"$sort": {"total_value": -1}},
-        {"$limit": 10}
-    ]
-    takers = await logs_collection.aggregate(takers_pipeline).to_list(length=10)
-
-    # 4. Timeline (Volume Diário)
-    timeline_pipeline = [
-        match_stage,
-        {
-            "$group": {
-                "_id": {
-                    "$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp", "timezone": "-03:00"}
-                },
-                "count": {"$sum": 1}
-            }
-        },
-        {"$sort": {"_id": 1}}
-    ]
-    timeline = await logs_collection.aggregate(timeline_pipeline).to_list(length=30)
-
-    return {
-        "kpis": kpis,
-        "providers": providers,
-        "takers": takers,
-        "timeline": timeline
-    }
-
-@app.get("/dashboard/ranking", response_class=HTMLResponse)
-async def dashboard_ranking(username: str = Depends(get_current_username)):
-    with open("app/templates/ranking.html", "r", encoding="utf-8") as f:
-        return f.read()
-
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(username: str = Depends(get_current_username)):
     with open("app/templates/dashboard.html", "r", encoding="utf-8") as f:
@@ -702,8 +443,4 @@ async def dashboard(username: str = Depends(get_current_username)):
 
 if __name__ == "__main__":
     # Nota: No ambiente real, use uvicorn via CLI ou python -m
-    import os
-    # Default para 80 se rodar direto
-    port = int(os.getenv("PORT", 80))
-    logger.info(f"Iniciando servidor Uvicorn na porta {port} (detectada via env PORT)...")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

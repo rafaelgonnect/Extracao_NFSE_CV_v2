@@ -130,7 +130,7 @@ async def analyze_contract_file(request: ContractRequest, background_tasks: Back
                     ],
                 },
             ],
-            text={"format": {"type": "json_object", "name": "contract_analysis"}}
+            text={"format": {"type": "json_object"}}
         )
 
         # Busca robusta do conteúdo na Responses API

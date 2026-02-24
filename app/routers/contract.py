@@ -31,7 +31,7 @@ Nao invente informacoes. Responda apenas em JSON valido conforme o esquema defin
 
 USER_PROMPT = """Analise o PDF completo e consolide os campos abaixo.
 Instrucoes detalhadas:
-- Numero do contrato: escolha o valor mais consistente e legivel entre as paginas.
+- Numero do contrato: Identifique o número do contrato impresso, localizado preferencialmente na página que contém o logo do Banco Itaú. Ignore números manuscritos (escritos à mão) pois geralmente são números de protocolo.
 - Logo Itau: true se apareceu em alguma pagina.
 - Clausulas: true se houver paginas com texto de clausulas.
 - Quadro resumo: usar summary_registration_number e verbacao_creditor encontrados no quadro.

@@ -122,7 +122,7 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
            - outras_informacoes: Extraia prioritariamente o número e série do RPS (Recibo Provisório de Serviços) se presente (ex: "RPS Nº 123 Série A"). Caso não haja RPS, capture outras observações relevantes do campo "Outras Informações".
 
         2. GRUPO PRESTADOR E TOMADOR (ENTIDADES):
-           - prestador_cnpj: CNPJ da empresa que emitiu a nota (Prestador). Busque no quadro "Prestador de Serviços". Remova pontuação (pontos, barras, traço). Formato final: 14 dígitos numéricos.
+           - prestador_cnpj: CNPJ da empresa que emitiu a nota (Prestador de Serviços). **ATENÇÃO: NÃO extraia o CNPJ da Prefeitura ou do órgão emissor, que frequentemente fica no cabeçalho ou topo da página.** Busque EXCLUSIVAMENTE dentro do quadro/seção destinado ao "Prestador de Serviços" (quem prestou o serviço). Remova pontuação (pontos, barras, traço). Formato final: 14 dígitos numéricos.
            - tomador_cnpj: CNPJ ou CPF da empresa/pessoa que contratou o serviço (Tomador/Destinatário). Busque no quadro "Tomador de Serviços". Remova pontuação. Se vazio/não identificado, retorne null.
 
         3. GRUPO DETALHES DO SERVIÇO:
@@ -156,6 +156,7 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
         2. Dê prioridade máxima para encontrar o CÓDIGO DE VERIFICAÇÃO / CHAVE DE ACESSO correto, independente da nomenclatura usada pela prefeitura.
         3. Evite confundir CNPJ do Tomador com CNPJ do Prestador (verifique os rótulos dos quadros).
         4. Ignore carimbos ou assinaturas que sobreponham o texto.
+        5. IMPORTANTE: O CNPJ do Prestador nunca é o mesmo da Prefeitura Municipal.
         """
 
         user_prompt = "Analise esta imagem de NFS-e e extraia os dados conforme o schema, focando na precisão do Número e Código de Verificação."

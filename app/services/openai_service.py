@@ -132,21 +132,24 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
 
         4. GRUPO VALORES E TRIBUTAÇÃO (PRECISÃO DECIMAL OBRIGATÓRIA):
            * Regra Geral: Converta vírgula decimal para ponto (ex: "1.250,00" -> 1250.00). Se o campo existir mas estiver zerado ("0,00", "-", "Isento"), retorne 0.00.
+           * ABREVIAÇÕES: "Vl.", "VL", "Vlr." e "Val." significam "Valor" e são equivalentes à forma por extenso (ex: "Vl. IRRF" = Valor do IRRF; "Vl. ISSQN" = Valor do ISS; "Vl. do Serviço" = Valor dos Serviços). Nunca ignore um campo por causa da abreviação do rótulo.
+           * SEPARAÇÃO DE QUADROS (OBRIGATÓRIO): a NFS-e do padrão nacional traz quadros distintos de tributos - "IMPOSTO SOBRE SERVIÇO DE QUALQUER NATUREZA - ISSQN", "TRIBUTAÇÃO NACIONAL" (retenções federais) e "IMPOSTO E CONTRIBUIÇÃO SOBRE BENS E SERVIÇOS - IBS/CBS". Cada campo deve ser lido EXCLUSIVAMENTE do seu próprio quadro. É proibido usar um valor do quadro IBS/CBS para preencher PIS, COFINS, CSLL, IRRF ou INSS.
            
            - valor_total: Valor Bruto da Nota ou Valor Total dos Serviços.
            - valor_iss: Valor monetário do Imposto Sobre Serviços (ISS).
            - aliquota_iss: Percentual do ISS aplicado (ex: 5.0, 2.0). Se estiver em %, converta para decimal simples (ex: "5%" -> 5.00).
-           - valor_pis: Valor do PIS (Retenção Federal).
-           - valor_cofins: Valor da COFINS (Retenção Federal).
-           - valor_inss: Valor do INSS (Retenção Federal).
-           - valor_ir: Valor do Imposto de Renda (IRRF).
-           - valor_csll: Valor da Contribuição Social (CSLL).
+           - valor_pis: Valor do PIS. Rótulos equivalentes: "Vl. PIS", "PIS", "PIS/PASEP".
+           - valor_cofins: Valor da COFINS. Rótulos equivalentes: "Vl. COFINS", "COFINS". ATENÇÃO: não confunda com "Valor CBS" ou "Valor Total do CBS", que pertencem ao quadro IBS/CBS.
+           - valor_inss: Valor do INSS. Rótulos equivalentes: "Vl. INSS", "INSS", "Vl. CP Retido", "Contribuição Previdenciária".
+           - valor_ir: Valor do Imposto de Renda Retido na Fonte. Rótulos equivalentes, TODOS válidos: "Vl. IRRF", "VL IRRF", "IRRF", "IR", "IRPJ", "Imposto de Renda", "Vl. IR Retido", "Retenção de IR". Se qualquer um desses rótulos aparecer acompanhado de um valor monetário, extraia esse valor - mesmo que a sigla usada nesta nota seja diferente da usada em outras notas.
+           - valor_csll: Valor da CSLL. Rótulos equivalentes: "Vl. CSLL", "CSLL", "Contribuição Social".
+           * O rótulo "Tipo de Retenção" (ex: "PIS/COFINS/CSLL Retidos") apenas indica quais tributos foram retidos; o valor a extrair é sempre o número impresso ao lado do rótulo de cada tributo.
            
         5. NOVOS CAMPOS ESPECÍFICOS:
-           - ibs: Indicador de Situação (IBS). Campo numérico. Se encontrado, extraia com 2 casas decimais.
-           - cbs: Código de Base de Substituição (CBS). Campo de texto.
+           - ibs: Valor monetário do IBS (Imposto sobre Bens e Serviços), lido no quadro IBS/CBS. Prefira "Valor Total do IBS"; na ausência dele, some "Valor IBS Est." e "Valor IBS Mun.". NUNCA use alíquotas ("Alíq. IBS", "Alíq. Efet. IBS") nem percentuais de redução.
+           - cbs: Valor monetário da CBS (Contribuição sobre Bens e Serviços), lido no quadro IBS/CBS. Prefira "Valor Total do CBS"; na ausência dele, use "Valor CBS". Retorne como texto no formato decimal com ponto (ex: "34.47"). NUNCA retorne percentual: "Alíq. CBS" e "Perc. Red. Alíq. CBS" (ex: "0,9%", "60%") NÃO são o valor da CBS.
            - valor_liquido: Valor Líquido da Nota. Se não estiver explícito, calcule: Valor Total - Retenções.
-           - base_calculo: Base de Cálculo do ISS. Se não estiver explícito, geralmente é igual ao Valor dos Serviços.
+           - base_calculo: Base de Cálculo do ISS, lida no quadro do ISSQN. NÃO use a "Base de Cálculo" do quadro IBS/CBS, que normalmente tem outro valor. Se não estiver explícita no quadro do ISSQN, use o Valor dos Serviços.
 
         Você DEVE seguir rigorosamente este schema JSON para a saída:
         {{json.dumps(json_schema, indent=2)}}
@@ -157,6 +160,7 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
         3. Evite confundir CNPJ do Tomador com CNPJ do Prestador (verifique os rótulos dos quadros).
         4. Ignore carimbos ou assinaturas que sobreponham o texto.
         5. IMPORTANTE: O CNPJ do Prestador nunca é o mesmo da Prefeitura Municipal.
+        6. O CÓDIGO DE VERIFICAÇÃO / CÓDIGO DE AUTENTICIDADE / CHAVE DE ACESSO deve ser transcrito dígito a dígito, exatamente como impresso. Não insira, repita nem omita caracteres, e não tente "completar" o tamanho do código.
         """
 
         user_prompt = "Analise esta imagem de NFS-e e extraia os dados conforme o schema, focando na precisão do Número e Código de Verificação."

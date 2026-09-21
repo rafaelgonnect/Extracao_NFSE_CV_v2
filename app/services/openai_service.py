@@ -135,7 +135,7 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
            * ABREVIAÇÕES: "Vl.", "VL", "Vlr." e "Val." significam "Valor" e são equivalentes à forma por extenso (ex: "Vl. IRRF" = Valor do IRRF; "Vl. ISSQN" = Valor do ISS; "Vl. do Serviço" = Valor dos Serviços). Nunca ignore um campo por causa da abreviação do rótulo.
            * SEPARAÇÃO DE QUADROS (OBRIGATÓRIO): a NFS-e do padrão nacional traz quadros distintos de tributos - "IMPOSTO SOBRE SERVIÇO DE QUALQUER NATUREZA - ISSQN", "TRIBUTAÇÃO NACIONAL" (retenções federais) e "IMPOSTO E CONTRIBUIÇÃO SOBRE BENS E SERVIÇOS - IBS/CBS". Cada campo deve ser lido EXCLUSIVAMENTE do seu próprio quadro. É proibido usar um valor do quadro IBS/CBS para preencher PIS, COFINS, CSLL, IRRF ou INSS.
            
-           - valor_total: Valor Bruto da Nota ou Valor Total dos Serviços.
+           - valor_total: Valor BRUTO dos serviços, ANTES de qualquer retenção. Rótulos aceitos: "Vl. do Serviço", "Valor dos Serviços", "Valor Total dos Serviços", "Valor Bruto". No layout nacional é o campo "Vl. do Serviço", dentro do quadro "DADOS DO SERVIÇO PRESTADO". PROIBIDO usar "Valor Total Líquido", "Valor Líquido" ou "Valor Total da Nota Fiscal - IBS/CBS": esses já vêm descontados das retenções e NÃO são o valor total.
            - valor_iss: Valor monetário do Imposto Sobre Serviços (ISS).
            - aliquota_iss: Percentual do ISS aplicado (ex: 5.0, 2.0). Se estiver em %, converta para decimal simples (ex: "5%" -> 5.00).
            - valor_pis: Valor do PIS. Rótulos equivalentes: "Vl. PIS", "PIS", "PIS/PASEP".
@@ -144,6 +144,7 @@ async def extract_data_from_pdf(pdf_content: bytes) -> NFSeData:
            - valor_ir: Valor do Imposto de Renda Retido na Fonte. Rótulos equivalentes, TODOS válidos: "Vl. IRRF", "VL IRRF", "IRRF", "IR", "IRPJ", "Imposto de Renda", "Vl. IR Retido", "Retenção de IR". Se qualquer um desses rótulos aparecer acompanhado de um valor monetário, extraia esse valor - mesmo que a sigla usada nesta nota seja diferente da usada em outras notas.
            - valor_csll: Valor da CSLL. Rótulos equivalentes: "Vl. CSLL", "CSLL", "Contribuição Social".
            * O rótulo "Tipo de Retenção" (ex: "PIS/COFINS/CSLL Retidos") apenas indica quais tributos foram retidos; o valor a extrair é sempre o número impresso ao lado do rótulo de cada tributo.
+           * Uma mesma linha pode conter vários tributos lado a lado (ex: "Vl. CSLL: R$102,57    Vl. IRRF: R$153,86    Vl. CP Retido: -"). Percorra a linha inteira e leia CADA rótulo separadamente; não pare no primeiro nem pule os do meio. Só retorne 0.00 para um tributo se o rótulo dele existir e estiver vazio ou com "-".
            
         5. NOVOS CAMPOS ESPECÍFICOS:
            - ibs: Valor monetário do IBS (Imposto sobre Bens e Serviços), lido no quadro IBS/CBS. Prefira "Valor Total do IBS"; na ausência dele, some "Valor IBS Est." e "Valor IBS Mun.". NUNCA use alíquotas ("Alíq. IBS", "Alíq. Efet. IBS") nem percentuais de redução.
